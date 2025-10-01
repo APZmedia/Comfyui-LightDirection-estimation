@@ -1,0 +1,31 @@
+{
+  "workflow": {
+    "1": {
+      "class_type": "LoadImage",
+      "inputs": {
+        "image": "normal_map.png"
+      }
+    },
+    "2": {
+      "class_type": "LoadImage", 
+      "inputs": {
+        "image": "luma_image.png"
+      }
+    },
+    "3": {
+      "class_type": "NormalMapLightEstimator",
+      "inputs": {
+        "normal_map": ["1", 0],
+        "luma_image": ["2", 0],
+        "luma_threshold": 0.5,
+        "curve_type": "s_curve",
+        "x_threshold": 0.1,
+        "y_threshold": 0.1,
+        "central_threshold": 0.3,
+        "hard_light_threshold": 0.15,
+        "soft_light_threshold": 0.35,
+        "use_weighted": false
+      }
+    }
+  }
+}

@@ -10,13 +10,20 @@ class DebugVisualizer:
     def generate_debug_mask(mask):
         """
         Generate debug visualization of the binary mask.
-        
+
         Args:
-            mask: Binary mask tensor (B, H, W)
-        
+            mask: Binary mask tensor (B, H, W) or (B, H, W, 1)
+
         Returns:
             debug_mask: RGB debug image (B, H, W, 3)
         """
+        # Handle different tensor shapes - squeeze extra dimensions if present
+        if mask.dim() == 4 and mask.shape[-1] == 1:
+            mask = mask.squeeze(-1)
+        elif mask.dim() > 3:
+            # If more than 3 dimensions, take first 3 and squeeze the rest
+            mask = mask.flatten(0, mask.dim() - 3).squeeze()
+
         batch_size, height, width = mask.shape
         debug_masks = []
         

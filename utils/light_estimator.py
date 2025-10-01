@@ -31,12 +31,20 @@ class CategoricalLightEstimator:
         results = []
         
         for b in range(batch_size):
-            lit_normals = normals[b][mask[b]]
-            
-            if len(lit_normals) == 0:
+            # Get mask for current batch and ensure it's boolean
+            current_mask = mask[b].bool()
+
+            # Apply mask to normals while preserving dimensions
+            lit_normals = normals[b][current_mask]
+
+            # Reshape to ensure 2D structure [N, 3] where N is number of lit pixels
+            if lit_normals.dim() == 1:
+                lit_normals = lit_normals.unsqueeze(0) if lit_normals.numel() > 0 else torch.empty(0, 3, device=normals.device, dtype=normals.dtype)
+
+            if lit_normals.shape[0] == 0:
                 results.append(self._empty_categories())
                 continue
-            
+
             # Extract XY components
             xy_normals = lit_normals[:, :2]
             

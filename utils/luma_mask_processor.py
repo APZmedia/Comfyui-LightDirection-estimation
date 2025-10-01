@@ -21,9 +21,13 @@ class LumaMaskProcessor:
         Returns:
             mask: Binary mask tensor (B, H, W) where True indicates lit areas
         """
+        # Ensure grayscale by averaging channels if necessary
+        if luma_image.shape[-1] > 1:
+            luma_image = luma_image.mean(dim=-1, keepdim=True)
+
         # Convert to numpy for curve processing
         luma_np = luma_image.detach().cpu().numpy()
-        
+
         if curve_type == "linear":
             # Simple linear mapping
             processed_luma = luma_np

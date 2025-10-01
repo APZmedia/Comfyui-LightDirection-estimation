@@ -1,5 +1,4 @@
 import torch
-import numpy as np
 
 class DebugVisualizer:
     """
@@ -10,234 +9,84 @@ class DebugVisualizer:
     def generate_debug_mask(mask):
         """
         Generate debug visualization of the binary mask.
-
-        Args:
-            mask: Binary mask tensor (B, H, W) or (B, H, W, 1)
-
-        Returns:
-            debug_mask: RGB debug image (B, H, W, 3)
         """
-        # Handle different tensor shapes - squeeze extra dimensions if present
+        # Ensure the mask is 3D (B, H, W) before unsqueezing
         if mask.dim() == 4 and mask.shape[-1] == 1:
             mask = mask.squeeze(-1)
-        elif mask.dim() > 3:
-            # If more than 3 dimensions, take first 3 and squeeze the rest
-            mask = mask.flatten(0, mask.dim() - 3).squeeze()
+        
+        # Add channel dimension and repeat for RGB
+        debug_mask = mask.float().unsqueeze(-1).repeat(1, 1, 1, 3)
+        return debug_mask
 
-        batch_size, height, width = mask.shape
-        debug_masks = []
-        
-        for b in range(batch_size):
-            # Convert binary mask to RGB
-            mask_np = mask[b].detach().cpu().numpy()
-            debug_rgb = np.zeros((height, width, 3), dtype=np.uint8)
-            
-            # Set lit areas to white, unlit to black
-            debug_rgb[mask_np] = [255, 255, 255]
-            
-            debug_masks.append(torch.from_numpy(debug_rgb).float() / 255.0)
-        
-        return torch.stack(debug_masks)
+    @staticmethod
+    def generate_lit_normals_visualization(normals, mask):
+        """
+        Generate visualization showing only the lit normal vectors.
+        """
+        normal_rgb = (normals + 1.0) / 2.0
+        lit_mask = mask.unsqueeze(-1)
+        lit_normals_viz = normal_rgb * lit_mask
+        return lit_normals_viz
+
+    @staticmethod
+    def generate_directional_visualization(normals, results):
+        """
+        Generate color-coded visualization of directional analysis.
+        """
+        batch_size, height, width, _ = normals.shape
+        viz = torch.zeros(batch_size, height, width, 3, device=normals.device)
+
+        x_category = results['x_category']
+        y_category = results['y_category']
+        hard_soft_index = results['hard_soft_index']
+        overall_confidence = results['confidence']['overall_confidence']
+
+        # Base colors
+        if x_category == "left":
+            base_color = torch.tensor([255, 100, 100], device=normals.device)
+        elif x_category == "right":
+            base_color = torch.tensor([200, 80, 80], device=normals.device)
+        else:
+            base_color = torch.tensor([150, 150, 150], device=normals.device)
+
+        # Adjust for Y direction
+        if y_category == "top":
+            base_color += torch.tensor([0, 100, 50], device=normals.device)
+        elif y_category == "bottom":
+            base_color += torch.tensor([50, -50, 0], device=normals.device)
+
+        # Apply softness and confidence
+        softness_factor = 1.0 - hard_soft_index
+        final_color = base_color * (0.7 + 0.3 * softness_factor) * overall_confidence
+        final_color = torch.clamp(final_color, 0, 255)
+
+        viz[:, :, :] = final_color.byte()
+        return viz.float() / 255.0
     
     @staticmethod
-    def generate_normal_visualization(normals, mask=None):
+    def generate_colormap_preview(height=256, width=256):
         """
-        Generate RGB visualization of normal vectors.
-        
-        Args:
-            normals: Normal vectors (B, H, W, 3)
-            mask: Optional binary mask to highlight specific areas
-        
-        Returns:
-            normal_viz: RGB visualization (B, H, W, 3)
+        Generate a visual preview of the colormap used for analysis.
         """
-        # Convert normals from [-1, 1] to [0, 1] for RGB display
-        normal_viz = (normals + 1.0) / 2.0
+        x = torch.linspace(-1, 1, width)
+        y = torch.linspace(-1, 1, height)
+        xx, yy = torch.meshgrid(y, x, indexing='ij')
         
-        if mask is not None:
-            # Dim unlit areas
-            normal_viz = normal_viz * mask.unsqueeze(-1)
+        # Mock results for visualization
+        mock_normals = torch.stack([xx, yy, torch.zeros_like(xx)], dim=-1).unsqueeze(0)
         
-        return normal_viz
-    
-    @staticmethod
-    def generate_spread_histogram(normals, mask, bins=36):
-        """
-        Generate polar histogram of lit normal distribution.
-        
-        Args:
-            normals: Normal vectors (B, H, W, 3)
-            mask: Binary mask (B, H, W)
-            bins: Number of histogram bins
-        
-        Returns:
-            histogram: Polar histogram data
-        """
-        batch_size = normals.shape[0]
-        histograms = []
-        
-        for b in range(batch_size):
-            lit_normals = normals[b][mask[b]]
-            
-            if len(lit_normals) == 0:
-                histograms.append(np.zeros(bins))
-                continue
-            
-            # Extract XY components and convert to polar coordinates
-            xy_normals = lit_normals[:, :2]
-            angles = torch.atan2(xy_normals[:, 1], xy_normals[:, 0])
-            
-            # Convert to degrees and create histogram
-            angles_deg = torch.rad2deg(angles).detach().cpu().numpy()
-            hist, _ = np.histogram(angles_deg, bins=bins, range=(-180, 180))
-            histograms.append(hist)
-        
-        return histograms
-    
-    @staticmethod
-    def generate_directional_visualization(normals, categorical_results):
-        """
-        Generate visualization showing categorical analysis results.
-        
-        Args:
-            normals: Normal vectors (B, H, W, 3)
-            categorical_results: Results from light estimator
-        
-        Returns:
-            directional_viz: Color-coded visualization (B, H, W, 3)
-        """
-        batch_size = normals.shape[0]
-        visualizations = []
-        
-        for b in range(batch_size):
-            result = categorical_results[b]
-            
-            # Create color-coded visualization
-            height, width = normals.shape[1], normals.shape[2]
-            viz = np.zeros((height, width, 3), dtype=np.uint8)
-            
-            # Get categories and index
-            x_category = result['x_category']
-            y_category = result['y_category']
-            hard_soft_index = result['hard_soft_index']
-            overall_confidence = result['confidence']['overall_confidence']
-            
-            # X direction colors (Red channel)
-            if x_category == "left":
-                red = 255
-            elif x_category == "right":
-                red = 128
-            else:  # central
-                red = 192
-            
-            # Y direction colors (Green channel)
-            if y_category == "top":
-                green = 255
-            elif y_category == "bottom":
-                green = 128
-            else:  # central
-                green = 192
-            
-            # Hard/Soft index colors (Blue channel)
-            # 0.0 (hard) = 255 (bright blue)
-            # 1.0 (soft) = 128 (medium blue)
-            blue = int(255 - (hard_soft_index * 127))
-            
-            # Apply confidence as alpha/transparency effect
-            confidence_factor = overall_confidence
-            red = int(red * confidence_factor)
-            green = int(green * confidence_factor)
-            blue = int(blue * confidence_factor)
-            
-            viz[:, :] = [red, green, blue]
-            visualizations.append(torch.from_numpy(viz).float() / 255.0)
-        
-        return torch.stack(visualizations)
-    
-    @staticmethod
-    def generate_confidence_heatmap(normals, categorical_results):
-        """
-        Generate confidence heatmap visualization.
-        
-        Args:
-            normals: Normal vectors (B, H, W, 3)
-            categorical_results: Results from light estimator
-        
-        Returns:
-            confidence_viz: Confidence heatmap (B, H, W, 3)
-        """
-        batch_size = normals.shape[0]
-        visualizations = []
-        
-        for b in range(batch_size):
-            result = categorical_results[b]
-            
-            # Create confidence heatmap
-            height, width = normals.shape[1], normals.shape[2]
-            viz = np.zeros((height, width, 3), dtype=np.uint8)
-            
-            # Get confidence values
-            x_confidence = result['confidence']['x_confidence']
-            y_confidence = result['confidence']['y_confidence']
-            quality_confidence = result['confidence']['quality_confidence']
-            overall_confidence = result['confidence']['overall_confidence']
-            
-            # Color code based on confidence levels
-            # Red = X confidence, Green = Y confidence, Blue = Quality confidence
-            red = int(255 * x_confidence)
-            green = int(255 * y_confidence)
-            blue = int(255 * quality_confidence)
-            
-            viz[:, :] = [red, green, blue]
-            visualizations.append(torch.from_numpy(viz).float() / 255.0)
-        
-        return torch.stack(visualizations)
-    
-    @staticmethod
-    def generate_quadrant_visualization(normals, mask):
-        """
-        Generate visualization showing directional quadrants.
-        
-        Args:
-            normals: Normal vectors (B, H, W, 3)
-            mask: Binary mask (B, H, W)
-        
-        Returns:
-            quadrant_viz: Quadrant visualization (B, H, W, 3)
-        """
-        batch_size = normals.shape[0]
-        visualizations = []
-        
-        for b in range(batch_size):
-            # Create quadrant visualization
-            height, width = normals.shape[1], normals.shape[2]
-            viz = np.zeros((height, width, 3), dtype=np.uint8)
-            
-            # Get lit normals
-            lit_normals = normals[b][mask[b]]
-            
-            if len(lit_normals) == 0:
-                visualizations.append(torch.from_numpy(viz).float() / 255.0)
-                continue
-            
-            # Extract XY components
-            xy_normals = lit_normals[:, :2]
-            
-            # Color code based on quadrants
-            for i, (x, y) in enumerate(xy_normals):
-                if x > 0 and y > 0:  # Top-right
-                    color = [255, 255, 0]  # Yellow
-                elif x < 0 and y > 0:  # Top-left
-                    color = [255, 0, 255]  # Magenta
-                elif x < 0 and y < 0:  # Bottom-left
-                    color = [0, 255, 255]  # Cyan
-                else:  # Bottom-right
-                    color = [255, 0, 0]  # Red
+        # Generate a color for each point in the grid
+        colormap = torch.zeros(height, width, 3)
+        for i in range(height):
+            for j in range(width):
+                # Pseudo-analysis for color mapping
+                x_val, y_val = xx[i, j], yy[i, j]
                 
-                # Find pixel position (simplified - would need proper mapping)
-                # This is a placeholder for the actual implementation
-                pass
-            
-            visualizations.append(torch.from_numpy(viz).float() / 255.0)
+                # Determine color based on position
+                red = 128 + 127 * x_val
+                green = 128 + 127 * y_val
+                blue = 128 - 127 * abs(x_val)
+                
+                colormap[i, j] = torch.tensor([red, green, blue])
         
-        return torch.stack(visualizations)
+        return colormap.byte().float() / 255.0

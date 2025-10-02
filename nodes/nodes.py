@@ -2,6 +2,7 @@ import torch
 from ..utils.light_estimator import CategoricalLightEstimator
 from ..utils.luma_mask_processor import LumaMaskProcessor
 from ..utils.debug_visualizer import DebugVisualizer
+from .separated_nodes import LightImageProcessor, LightDistributionAnalyzer
 
 class NormalMapLightEstimator:
     """
@@ -76,3 +77,24 @@ class NormalMapLightEstimator:
             x_confidence, y_confidence, overall_confidence, spread_value,
             debug_mask, directional_viz, lit_normals_viz, colormap_preview
         )
+
+
+# ============================================================================
+# MODULAR NODES - SEPARATED CONCERNS
+# ============================================================================
+
+# Import the separated nodes
+from .separated_nodes import LightImageProcessor, LightDistributionAnalyzer
+
+# Make them available for ComfyUI registration
+NODE_CLASS_MAPPINGS = {
+    "NormalMapLightEstimator": NormalMapLightEstimator,
+    "LightImageProcessor": LightImageProcessor,
+    "LightDistributionAnalyzer": LightDistributionAnalyzer,
+}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "NormalMapLightEstimator": "Normal Map Light Estimator (Monolithic)",
+    "LightImageProcessor": "Light Image Processor",
+    "LightDistributionAnalyzer": "Light Distribution Analyzer",
+}

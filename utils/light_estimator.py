@@ -19,45 +19,53 @@ class CategoricalLightEstimator:
     def analyze_directional_categories(self, normals, mask):
         """
         Analyze normals and classify into directional categories with hard/soft index.
-        
+
         Args:
             normals: Normal vectors tensor (B, H, W, 3)
             mask: Binary mask tensor (B, H, W)
-        
+
         Returns:
             results: Dictionary of analysis results for the batch
         """
-        batch_size, _, _, _ = normals.shape
-        
-        # Ensure mask is boolean
+        batch_size, height, width, _ = normals.shape
+
+        # Ensure mask is boolean and 3D
+        if mask.dim() == 4:
+            mask = mask.squeeze(-1)
         current_mask = mask.bool()
+
+        # Analyze color distribution before masking
+        color_analysis_before = self._analyze_color_distribution(normals)
 
         # Apply mask to normals
         lit_normals = normals[current_mask]
 
         if lit_normals.numel() == 0:
-            return self._empty_categories(batch_size, normals.device)
+            return self._empty_categories_with_color_analysis(batch_size, normals.device, color_analysis_before)
 
         if lit_normals.dim() == 1:
             lit_normals = lit_normals.unsqueeze(0)
 
+        # Analyze color distribution after masking
+        color_analysis_after = self._analyze_color_distribution(lit_normals)
+
         # Extract XY components
         xy_normals = lit_normals[:, :2]
-        
+
         # Analyze directional distribution
         x_analysis = self._analyze_x_direction(xy_normals)
         y_analysis = self._analyze_y_direction(xy_normals)
-        
+
         # Analyze light quality
         quality_analysis = self._analyze_light_quality(xy_normals)
-        
+
         # Determine categories
         x_category = self._classify_x_direction(x_analysis)
         y_category = self._classify_y_direction(y_analysis)
-        
+
         # Calculate hard/soft index
         hard_soft_index = self._calculate_hard_soft_index(quality_analysis)
-        
+
         # Calculate confidence scores
         confidence = {
             'x_confidence': x_analysis['confidence'],
@@ -65,13 +73,17 @@ class CategoricalLightEstimator:
             'quality_confidence': quality_analysis['confidence'],
             'overall_confidence': (x_analysis['confidence'] + y_analysis['confidence'] + quality_analysis['confidence']) / 3
         }
-        
+
         return {
             'x_category': x_category,
             'y_category': y_category,
             'hard_soft_index': hard_soft_index,
             'confidence': confidence,
-            'quality_analysis': quality_analysis
+            'quality_analysis': quality_analysis,
+            'color_analysis_before': color_analysis_before,
+            'color_analysis_after': color_analysis_after,
+            'lit_pixel_count': lit_normals.shape[0],
+            'total_pixel_count': normals.shape[1] * normals.shape[2]
         }
     
     def _analyze_light_quality(self, xy_normals):
@@ -158,6 +170,72 @@ class CategoricalLightEstimator:
         else:
             return "bottom"
     
+    def _analyze_color_distribution(self, normals):
+        """
+        Analyze the color distribution of normal vectors.
+
+        Args:
+            normals: Normal vectors tensor (B, H, W, 3) or (N, 3)
+
+        Returns:
+            color_stats: Dictionary with color statistics
+        """
+        if normals.dim() == 4:
+            # Flatten to (N, 3) for analysis
+            flat_normals = normals.view(-1, 3)
+        else:
+            flat_normals = normals
+
+        if flat_normals.shape[0] == 0:
+            return {
+                'mean_color': torch.zeros(3),
+                'std_color': torch.zeros(3),
+                'dominant_direction': 'central',
+                'color_variance': 0.0
+            }
+
+        # Calculate color statistics
+        mean_color = torch.mean(flat_normals, dim=0)
+        # Use unbiased=False to avoid degrees of freedom issues with small samples
+        std_color = torch.std(flat_normals, dim=0, unbiased=False)
+
+        # Determine dominant direction based on color values
+        x_val = mean_color[0].item()
+        y_val = mean_color[1].item()
+
+        if abs(x_val) <= self.central_threshold and abs(y_val) <= self.central_threshold:
+            dominant_direction = 'central'
+        elif abs(x_val) > abs(y_val):
+            dominant_direction = 'left' if x_val < 0 else 'right'
+        else:
+            dominant_direction = 'bottom' if y_val < 0 else 'top'
+
+        # Calculate overall color variance
+        color_variance = torch.mean(std_color).item()
+
+        return {
+            'mean_color': mean_color,
+            'std_color': std_color,
+            'dominant_direction': dominant_direction,
+            'color_variance': color_variance
+        }
+
+    def _empty_categories_with_color_analysis(self, batch_size, device, color_analysis_before):
+        """
+        Return empty categories for cases with no lit normals, including color analysis.
+        """
+        return {
+            'x_category': "central",
+            'y_category': "central",
+            'hard_soft_index': 0.5,
+            'confidence': {'x_confidence': 0.0, 'y_confidence': 0.0, 'quality_confidence': 0.0, 'overall_confidence': 0.0},
+            'quality_analysis': {'spread': 0.0, 'confidence': 0.0},
+            'color_analysis_before': color_analysis_before,
+            'color_analysis_after': color_analysis_before,  # Same as before if no lit pixels
+            'lit_pixel_count': 0,
+            'total_pixel_count': 0
+        }
+
     def _empty_categories(self, batch_size, device):
         """
         Return empty categories for cases with no lit normals.

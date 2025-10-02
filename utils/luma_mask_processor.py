@@ -23,7 +23,7 @@ class LumaMaskProcessor:
         """
         # Ensure grayscale by averaging channels if necessary
         if luma_image.shape[-1] > 1:
-            luma_image = luma_image.mean(dim=-1, keepdim=True)
+            luma_image = luma_image.mean(dim=-1)
 
         # Convert to numpy for curve processing
         luma_np = luma_image.detach().cpu().numpy()

@@ -10,11 +10,11 @@ class DebugVisualizer:
         """
         Generate debug visualization of the binary mask.
         """
-        # Ensure the mask is 3D (B, H, W) before unsqueezing
+        # Ensure mask is 3D (B, H, W)
         if mask.dim() == 4 and mask.shape[-1] == 1:
             mask = mask.squeeze(-1)
-        
-        # Add channel dimension and repeat for RGB
+
+        # Convert to RGB visualization: white for lit areas, black for unlit
         debug_mask = mask.float().unsqueeze(-1).repeat(1, 1, 1, 3)
         return debug_mask
 
@@ -89,4 +89,35 @@ class DebugVisualizer:
                 
                 colormap[i, j] = torch.tensor([red, green, blue])
         
-        return colormap.byte().float() / 255.0
+        return colormap.unsqueeze(0).byte().float() / 255.0
+
+    @staticmethod
+    def generate_color_histogram(normals, title="Color Distribution"):
+        """
+        Generate a color histogram visualization of normal vectors.
+
+        Args:
+            normals: Normal vectors tensor (B, H, W, 3)
+            title: Title for the histogram
+
+        Returns:
+            histogram_viz: RGB visualization of color distribution (1, 256, 256, 3)
+        """
+        # Flatten normals to get color distribution
+        flat_normals = normals.view(-1, 3) * 255 + 128  # Scale to 0-255 range
+        flat_normals = torch.clamp(flat_normals, 0, 255)
+
+        # Create histogram visualization
+        hist_size = 256
+        histogram = torch.zeros(hist_size, hist_size, 3)
+
+        # Create a simple 2D histogram representation
+        for i in range(min(flat_normals.shape[0], 10000)):  # Sample for performance
+            x = int(flat_normals[i, 0].item())
+            y = int(flat_normals[i, 1].item())
+            if 0 <= x < hist_size and 0 <= y < hist_size:
+                # Color based on Z component (blue channel)
+                intensity = flat_normals[i, 2].item() / 255.0
+                histogram[x, y] = torch.tensor([intensity, intensity, 1.0 - intensity])
+
+        return histogram.unsqueeze(0).byte().float() / 255.0

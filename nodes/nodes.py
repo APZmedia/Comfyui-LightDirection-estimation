@@ -29,13 +29,13 @@ class NormalMapLightEstimator:
     
     RETURN_TYPES = (
         "STRING", "STRING", "STRING", "FLOAT", "FLOAT", "FLOAT", "FLOAT", "FLOAT",
-        "IMAGE", "IMAGE", "IMAGE", "IMAGE",
+        "IMAGE", "IMAGE", "IMAGE", "IMAGE", "IMAGE",
     )
 
     RETURN_NAMES = (
         "x_direction", "y_direction", "combined_direction", "hard_soft_index",
         "x_confidence", "y_confidence", "overall_confidence", "spread_value",
-        "debug_mask", "directional_viz", "lit_normals_viz", "colormap_preview",
+        "debug_mask", "directional_viz", "lit_normals_viz", "colormap_preview", "color_histogram",
     )
     
     FUNCTION = "estimate_lighting"
@@ -71,11 +71,12 @@ class NormalMapLightEstimator:
         directional_viz = DebugVisualizer.generate_directional_visualization(normal_map, results)
         lit_normals_viz = DebugVisualizer.generate_lit_normals_visualization(normal_map, mask)
         colormap_preview = DebugVisualizer.generate_colormap_preview()
+        color_histogram = DebugVisualizer.generate_color_histogram(normal_map)
 
         return (
             x_direction, y_direction, combined_direction, hard_soft_index,
             x_confidence, y_confidence, overall_confidence, spread_value,
-            debug_mask, directional_viz, lit_normals_viz, colormap_preview
+            debug_mask, directional_viz, lit_normals_viz, colormap_preview, color_histogram
         )
 
 

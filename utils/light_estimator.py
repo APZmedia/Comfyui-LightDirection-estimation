@@ -6,15 +6,21 @@ class CategoricalLightEstimator:
     """
     
     def __init__(self, x_threshold=0.1, y_threshold=0.1, central_threshold=0.3,
-                 hard_light_threshold=0.15, soft_light_threshold=0.35):
+                 hard_light_threshold=0.15, soft_light_threshold=0.35,
+                 format_mode="auto", normal_standard="OpenGL"):
         # Directional thresholds
         self.x_threshold = x_threshold
         self.y_threshold = y_threshold
         self.central_threshold = central_threshold
-        
+
         # Hard/Soft classification thresholds
         self.hard_light_threshold = hard_light_threshold
         self.soft_light_threshold = soft_light_threshold
+
+        # Normal map format settings
+        self.format_mode = format_mode
+        self.normal_standard = normal_standard
+        self.detected_format = None
         
     def analyze_directional_categories(self, normals, mask):
         """
@@ -34,6 +40,10 @@ class CategoricalLightEstimator:
             mask = mask.squeeze(-1)
         current_mask = mask.bool()
 
+        # Detect and validate normal map format
+        detected_format = self._detect_normal_format(normals) if self.format_mode == "auto" else self.normal_standard
+        self.detected_format = detected_format
+
         # Analyze color distribution before masking
         color_analysis_before = self._analyze_color_distribution(normals)
 
@@ -48,6 +58,18 @@ class CategoricalLightEstimator:
 
         # Analyze color distribution after masking
         color_analysis_after = self._analyze_color_distribution(lit_normals)
+
+        # DEBUG: Print key information for pipeline verification
+        print("=== Pipeline Verification ===")
+        print(f"Input normals shape: {normals.shape}")
+        print(f"Mask shape: {mask.shape}")
+        print(f"Lit normals count: {lit_normals.shape[0]}")
+        print(f"Total pixels: {normals.shape[1] * normals.shape[2]}")
+        print(f"Color before - Mean: {color_analysis_before['mean_color']}")
+        print(f"Color before - Dominant: {color_analysis_before['dominant_direction']}")
+        print(f"Color after - Mean: {color_analysis_after['mean_color']}")
+        print(f"Color after - Dominant: {color_analysis_after['dominant_direction']}")
+        print("==========================")
 
         # Extract XY components
         xy_normals = lit_normals[:, :2]
@@ -247,3 +269,48 @@ class CategoricalLightEstimator:
             'confidence': {'x_confidence': 0.0, 'y_confidence': 0.0, 'quality_confidence': 0.0, 'overall_confidence': 0.0},
             'quality_analysis': {'spread': 0.0, 'confidence': 0.0}
         }
+
+    def _detect_normal_format(self, normals):
+        """
+        Auto-detect the normal map format by analyzing color distribution patterns.
+
+        Args:
+            normals: Normal vectors tensor (B, H, W, 3)
+
+        Returns:
+            detected_format: String indicating the likely format
+        """
+        # Flatten to analyze color distribution
+        flat_normals = normals.view(-1, 3)
+
+        # Calculate mean colors
+        mean_colors = torch.mean(flat_normals, dim=0)
+
+        # Check for DirectX vs OpenGL pattern
+        # DirectX typically has more variation in green channel if Y is inverted
+        green_std = torch.std(flat_normals[:, 1]).item()
+        blue_std = torch.std(flat_normals[:, 2]).item()
+
+        # Simple heuristic: if green channel has significantly more variation than blue,
+        # it might be DirectX format (where Y is inverted)
+        if green_std > blue_std * 1.5:
+            return "DirectX"
+        else:
+            return "OpenGL"
+
+    def _interpret_normal_colors(self, x_val, y_val, z_val):
+        """
+        Interpret normal vector values based on the detected format.
+
+        Args:
+            x_val, y_val, z_val: Color components from normal map
+
+        Returns:
+            interpreted_x, interpreted_y: Properly oriented normal components
+        """
+        if self.detected_format == "DirectX":
+            # DirectX inverts Y axis
+            return x_val, -y_val
+        else:
+            # OpenGL, World Space, Object Space (standard orientation)
+            return x_val, y_val

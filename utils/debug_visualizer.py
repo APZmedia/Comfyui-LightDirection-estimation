@@ -37,8 +37,8 @@ class DebugVisualizer:
         fig, ax = plt.subplots(figsize=(12, 6))
         
         clusters = ['Right', 'Left', 'Up', 'Down', 'Front', 'Flat']
-        before = [cluster_results['clustering_before']['clusters'][c]['percentage'] for c in ['right', 'left', 'up', 'down', 'front', 'flat']]
-        after = [cluster_results['clustering_after']['clusters'][c]['percentage'] for c in ['right', 'left', 'up', 'down', 'front', 'flat']]
+        before = [cluster_results['true_geometry']['clusters'][c]['percentage'] for c in ['right', 'left', 'up', 'down', 'front', 'flat']]
+        after = [cluster_results['perceived_geometry']['clusters'][c]['percentage'] for c in ['right', 'left', 'up', 'down', 'front', 'flat']]
 
         x = np.arange(len(clusters))
         width = 0.35
@@ -47,7 +47,7 @@ class DebugVisualizer:
         rects2 = ax.bar(x + width/2, after, width, label='Filtered', color='#ff7f0e')
 
         ax.set_ylabel('Percentage of Normals')
-        ax.set_title('Cluster Distribution: Original vs Filtered')
+        ax.set_title('True Geometry vs Lighting Perception Clusters', fontsize=14, pad=15)
         ax.set_xticks(x)
         ax.set_xticklabels(clusters)
         ax.legend()

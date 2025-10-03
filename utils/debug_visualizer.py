@@ -80,7 +80,7 @@ class DebugVisualizer:
     def create_threshold_classification_chart(normal_map, x_threshold, y_threshold, mask=None):
         """
         Create a chart showing threshold-based classification results.
-        Shows both overall distribution and lit-only distribution if mask is provided.
+        Shows original normal values vs lit-only masked values comparison.
         """
         import torch
         import numpy as np
@@ -150,13 +150,13 @@ class DebugVisualizer:
             # Create 2x2 subplot layout
             fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
             
-            # X Direction - Overall
+            # X Direction - Original Normal Values
             x_categories = ['Light from Right', 'Center', 'Light from Left']
             x_counts_all = [x_left_all, x_center_all, x_right_all]
             x_percentages_all = [count / x_total_all * 100 for count in x_counts_all]
             
             bars1 = ax1.bar(x_categories, x_percentages_all, color=['red', 'green', 'blue'])
-            ax1.set_title(f'X Direction - Overall (threshold={x_threshold})', fontsize=12)
+            ax1.set_title(f'X Direction - Original Normal Values (threshold={x_threshold})', fontsize=12)
             ax1.set_ylabel('Percentage of All Pixels')
             ax1.set_ylim(0, 100)
             
@@ -165,12 +165,12 @@ class DebugVisualizer:
                 ax1.text(bar.get_x() + bar.get_width()/2., height + 1,
                         f'{pct:.1f}%', ha='center', va='bottom')
             
-            # X Direction - Lit Only
+            # X Direction - Lit Masked Values
             x_counts_lit = [x_left_lit, x_center_lit, x_right_lit]
             x_percentages_lit = [count / x_total_lit * 100 for count in x_counts_lit] if x_total_lit > 0 else [0, 0, 0]
             
             bars2 = ax2.bar(x_categories, x_percentages_lit, color=['red', 'green', 'blue'])
-            ax2.set_title(f'X Direction - Lit Only (threshold={x_threshold})', fontsize=12)
+            ax2.set_title(f'X Direction - Lit Masked Values (threshold={x_threshold})', fontsize=12)
             ax2.set_ylabel('Percentage of Lit Pixels')
             ax2.set_ylim(0, 100)
             
@@ -179,13 +179,13 @@ class DebugVisualizer:
                 ax2.text(bar.get_x() + bar.get_width()/2., height + 1,
                         f'{pct:.1f}%', ha='center', va='bottom')
             
-            # Y Direction - Overall
+            # Y Direction - Original Normal Values
             y_categories = ['Light from Above', 'Center', 'Light from Below']
             y_counts_all = [y_above_all, y_center_all, y_below_all]
             y_percentages_all = [count / y_total_all * 100 for count in y_counts_all]
             
             bars3 = ax3.bar(y_categories, y_percentages_all, color=['red', 'green', 'blue'])
-            ax3.set_title(f'Y Direction - Overall (threshold={y_threshold})', fontsize=12)
+            ax3.set_title(f'Y Direction - Original Normal Values (threshold={y_threshold})', fontsize=12)
             ax3.set_ylabel('Percentage of All Pixels')
             ax3.set_ylim(0, 100)
             
@@ -194,12 +194,12 @@ class DebugVisualizer:
                 ax3.text(bar.get_x() + bar.get_width()/2., height + 1,
                         f'{pct:.1f}%', ha='center', va='bottom')
             
-            # Y Direction - Lit Only
+            # Y Direction - Lit Masked Values
             y_counts_lit = [y_above_lit, y_center_lit, y_below_lit]
             y_percentages_lit = [count / y_total_lit * 100 for count in y_counts_lit] if y_total_lit > 0 else [0, 0, 0]
             
             bars4 = ax4.bar(y_categories, y_percentages_lit, color=['red', 'green', 'blue'])
-            ax4.set_title(f'Y Direction - Lit Only (threshold={y_threshold})', fontsize=12)
+            ax4.set_title(f'Y Direction - Lit Masked Values (threshold={y_threshold})', fontsize=12)
             ax4.set_ylabel('Percentage of Lit Pixels')
             ax4.set_ylim(0, 100)
             
@@ -218,7 +218,7 @@ class DebugVisualizer:
             x_percentages = [count / x_total_all * 100 for count in x_counts]
             
             bars1 = ax1.bar(x_categories, x_percentages, color=['red', 'green', 'blue'])
-            ax1.set_title(f'X Direction Classification (threshold={x_threshold})', fontsize=12)
+            ax1.set_title(f'X Direction - Original Normal Values (threshold={x_threshold})', fontsize=12)
             ax1.set_ylabel('Percentage of Pixels')
             ax1.set_ylim(0, 100)
             
@@ -233,7 +233,7 @@ class DebugVisualizer:
             y_percentages = [count / y_total_all * 100 for count in y_counts]
             
             bars2 = ax2.bar(y_categories, y_percentages, color=['red', 'green', 'blue'])
-            ax2.set_title(f'Y Direction Classification (threshold={y_threshold})', fontsize=12)
+            ax2.set_title(f'Y Direction - Original Normal Values (threshold={y_threshold})', fontsize=12)
             ax2.set_ylabel('Percentage of Pixels')
             ax2.set_ylim(0, 100)
             

@@ -97,11 +97,11 @@ class NormalMapLightEstimator:
                 if exclusion_mask.shape[0] == 1:  # Remove batch dimension if it was added
                     exclusion_mask = exclusion_mask.squeeze(0)  # [H, W]
             
-            # Combine luma mask with exclusion mask (exclude where exclusion_mask is True)
-            mask = luma_mask & (~exclusion_mask.bool())
-            excluded_pixels = exclusion_mask.sum().item()
+            # Combine luma mask with exclusion mask (keep where exclusion_mask is True/white)
+            mask = luma_mask & exclusion_mask.bool()
+            included_pixels = exclusion_mask.sum().item()
             total_pixels = exclusion_mask.numel()
-            print(f"Excluded {excluded_pixels}/{total_pixels} pixels ({excluded_pixels/total_pixels*100:.1f}%)")
+            print(f"Included {included_pixels}/{total_pixels} pixels from exclusion mask ({included_pixels/total_pixels*100:.1f}%)")
         else:
             mask = luma_mask
             print("No exclusion mask provided")
@@ -304,18 +304,18 @@ class NormalMapLightEstimator:
             normals_y = normal_map[:, :, :, 1]
         
         # Create classification mask
-        down_mask = normals_y < -y_threshold
-        up_mask = normals_y > y_threshold
-        center_mask = ~(down_mask | up_mask)
+        above_mask = normals_y > y_threshold  # Positive Y = surfaces pointing up = light from above
+        below_mask = normals_y < -y_threshold  # Negative Y = surfaces pointing down = light from below
+        center_mask = ~(above_mask | below_mask)
         
         # Create RGB image
         height, width = normals_y.shape[1], normals_y.shape[2]
         preview = torch.zeros((1, height, width, 3), dtype=torch.float32)
         
-        # Red for down, Green for center, Blue for up
-        preview[0, :, :, 0] = down_mask.float()  # Red channel
-        preview[0, :, :, 1] = center_mask.float()  # Green channel
-        preview[0, :, :, 2] = up_mask.float()  # Blue channel
+        # Red for above, Green for center, Blue for below
+        preview[0, :, :, 0] = above_mask.float()  # Red channel (Light from Above)
+        preview[0, :, :, 1] = center_mask.float()  # Green channel (Center)
+        preview[0, :, :, 2] = below_mask.float()  # Blue channel (Light from Below)
         
         # Add labels using matplotlib
         plt.switch_backend('Agg')

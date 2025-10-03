@@ -246,9 +246,9 @@ class CategoricalLightEstimator:
         # Y direction classification  
         y_mean = mean_normal[1].item()
         if y_mean > self.y_threshold:
-            y_category = 'below'  # Light from below (surfaces point up)
+            y_category = 'above'  # Light from above (surfaces point up)
         elif y_mean < -self.y_threshold:
-            y_category = 'above'  # Light from above (surfaces point down)
+            y_category = 'below'  # Light from below (surfaces point down)
         else:
             y_category = 'center'
         
@@ -424,9 +424,9 @@ class CategoricalLightEstimator:
         mean_y = y_analysis['mean_y']
         
         if mean_y > self.y_threshold:
-            return "below"  # Light from below (surfaces point up)
+            return "above"  # Light from above (surfaces point up)
         elif mean_y < -self.y_threshold:
-            return "above"  # Light from above (surfaces point down)
+            return "below"  # Light from below (surfaces point down)
         else:
             return "center"
 

@@ -44,48 +44,56 @@ class CategoricalLightEstimator:
         detected_format = self._detect_normal_format(normals) if self.format_mode == "auto" else self.normal_standard
         self.detected_format = detected_format
 
-        # Analyze directional clustering before masking
-        clustering_before = self._analyze_directional_clustering(normals, None)
-
-        # Apply mask to normals
-        lit_normals = normals[current_mask]
-
-        if lit_normals.numel() == 0:
-            return self._empty_categories_with_clustering(batch_size, normals.device, clustering_before)
-
-        if lit_normals.dim() == 1:
-            lit_normals = lit_normals.unsqueeze(0)
-
-        # Analyze directional clustering after masking
-        clustering_after = self._analyze_directional_clustering(lit_normals, None)
+        # Analyze true geometry (all normals)
+        geometry_analysis = self._analyze_directional_clustering(normals, None)
+        
+        # Analyze perceived geometry through lighting mask
+        perceived_analysis = self._analyze_directional_clustering(normals, current_mask)
 
         # Enhanced analysis using directional clustering
         enhanced_results = self._analyze_directional_clustering_enhanced(
-            normals, current_mask, clustering_before, clustering_after
+            normals, current_mask, geometry_analysis, perceived_analysis
         )
 
+        # Analyze red channel intensities
+        red_analysis = {
+            'full_red': normals[..., 0].mean().item(),
+            'lit_red': normals[current_mask][..., 0].mean().item() if current_mask.any() else 0.0,
+            'red_impact_ratio': 0.0
+        }
+        if red_analysis['full_red'] > 0:
+            red_analysis['red_impact_ratio'] = red_analysis['lit_red'] / red_analysis['full_red']
+
         # DEBUG: Print key information for pipeline verification
+        print("\nRed Channel Analysis:")
+        print(f"Full image red: {red_analysis['full_red']:.3f}")
+        print(f"Lit areas red: {red_analysis['lit_red']:.3f}")
+        print(f"Impact ratio: {red_analysis['red_impact_ratio']:.2f}x")
         print("=== Pipeline Verification ===")
         print(f"Input normals shape: {normals.shape}")
         print(f"Mask shape: {mask.shape}")
-        print(f"Lit normals count: {lit_normals.shape[0]}")
-        print(f"Total pixels: {normals.shape[1] * normals.shape[2]}")
+        print(f"Lit pixels analyzed: {perceived_analysis['total_normals']}")
+        print(f"Total pixels: {geometry_analysis['total_normals']}")
 
         # Show clustering analysis
-        print("=== Directional Clustering ===")
-        for cluster_name, cluster_data in clustering_before['clusters'].items():
-            before_pct = cluster_data['percentage']
-            after_pct = clustering_after['clusters'][cluster_name]['percentage']
-            effect = after_pct - before_pct
-            print(f"{cluster_name}: Before={before_pct:.3f}, After={after_pct:.3f}, Effect={effect:.3f}")
-
-        print(f"Dominant cluster before: {clustering_before['dominant_cluster']}")
-        print(f"Dominant cluster after: {clustering_after['dominant_cluster']}")
+        print("=== Geometry vs Lighting Perception ===")
+        print("True Geometry Distribution:")
+        for cluster, data in geometry_analysis['clusters'].items():
+            print(f"- {cluster}: {data['percentage']:.1%}")
+        
+        print("\nLighting Perception Analysis:")
+        # Show all directions with explicit vertical labels
+        clusters_to_show = ['right', 'left', 'up', 'down', 'front', 'flat']
+        for cluster in clusters_to_show:
+            geo_pct = geometry_analysis['clusters'][cluster]['percentage']
+            perc_pct = perceived_analysis['clusters'][cluster]['percentage']
+            direction_label = {'up': 'top', 'down': 'bottom'}.get(cluster, cluster)
+            print(f"- {direction_label}: {perc_pct:.1%} (Δ{perc_pct-geo_pct:+.1%})")
         print(f"Enhanced analysis: {enhanced_results['primary_direction']}")
         print("==========================")
 
         # Extract XY components
-        xy_normals = lit_normals[:, :2]
+        xy_normals = normals[current_mask][:, :2]
 
         # Analyze directional distribution
         x_analysis = self._analyze_x_direction(xy_normals)
@@ -109,22 +117,18 @@ class CategoricalLightEstimator:
             'overall_confidence': (x_analysis['confidence'] + y_analysis['confidence'] + quality_analysis['confidence']) / 3
         }
 
-        # Enhanced analysis using directional clustering
-        enhanced_results = self._analyze_directional_clustering_enhanced(
-            normals, current_mask, clustering_before, clustering_after
-        )
-
         return {
             'x_category': x_category,
             'y_category': y_category,
             'hard_soft_index': hard_soft_index,
             'confidence': confidence,
             'quality_analysis': quality_analysis,
-            'clustering_before': clustering_before,
-            'clustering_after': clustering_after,
+            'true_geometry': geometry_analysis,
+            'perceived_geometry': perceived_analysis,
             'enhanced_analysis': enhanced_results,
-            'lit_pixel_count': lit_normals.shape[0],
-            'total_pixel_count': normals.shape[1] * normals.shape[2]
+            'red_channel_analysis': red_analysis,
+            'lit_pixel_count': perceived_analysis['total_normals'],
+            'total_pixel_count': geometry_analysis['total_normals']
         }
     
     def _analyze_light_quality(self, xy_normals):

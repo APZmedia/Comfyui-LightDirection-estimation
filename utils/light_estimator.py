@@ -44,20 +44,25 @@ class CategoricalLightEstimator:
         detected_format = self._detect_normal_format(normals) if self.format_mode == "auto" else self.normal_standard
         self.detected_format = detected_format
 
-        # Analyze color distribution before masking
-        color_analysis_before = self._analyze_color_distribution(normals)
+        # Analyze directional clustering before masking
+        clustering_before = self._analyze_directional_clustering(normals, None)
 
         # Apply mask to normals
         lit_normals = normals[current_mask]
 
         if lit_normals.numel() == 0:
-            return self._empty_categories_with_color_analysis(batch_size, normals.device, color_analysis_before)
+            return self._empty_categories_with_clustering(batch_size, normals.device, clustering_before)
 
         if lit_normals.dim() == 1:
             lit_normals = lit_normals.unsqueeze(0)
 
-        # Analyze color distribution after masking
-        color_analysis_after = self._analyze_color_distribution(lit_normals)
+        # Analyze directional clustering after masking
+        clustering_after = self._analyze_directional_clustering(lit_normals.unsqueeze(0), current_mask.unsqueeze(0))
+
+        # Enhanced analysis using directional clustering
+        enhanced_results = self._analyze_directional_clustering_enhanced(
+            normals, current_mask, clustering_before, clustering_after
+        )
 
         # DEBUG: Print key information for pipeline verification
         print("=== Pipeline Verification ===")
@@ -65,10 +70,18 @@ class CategoricalLightEstimator:
         print(f"Mask shape: {mask.shape}")
         print(f"Lit normals count: {lit_normals.shape[0]}")
         print(f"Total pixels: {normals.shape[1] * normals.shape[2]}")
-        print(f"Color before - Mean: {color_analysis_before['mean_color']}")
-        print(f"Color before - Dominant: {color_analysis_before['dominant_direction']}")
-        print(f"Color after - Mean: {color_analysis_after['mean_color']}")
-        print(f"Color after - Dominant: {color_analysis_after['dominant_direction']}")
+
+        # Show clustering analysis
+        print("=== Directional Clustering ===")
+        for cluster_name, cluster_data in clustering_before['clusters'].items():
+            before_pct = cluster_data['percentage']
+            after_pct = clustering_after['clusters'][cluster_name]['percentage']
+            effect = after_pct - before_pct
+            print(f"{cluster_name}: Before={before_pct:.3f}, After={after_pct:.3f}, Effect={effect:.3f}")
+
+        print(f"Dominant cluster before: {clustering_before['dominant_cluster']}")
+        print(f"Dominant cluster after: {clustering_after['dominant_cluster']}")
+        print(f"Enhanced analysis: {enhanced_results['primary_direction']}")
         print("==========================")
 
         # Extract XY components
@@ -96,14 +109,20 @@ class CategoricalLightEstimator:
             'overall_confidence': (x_analysis['confidence'] + y_analysis['confidence'] + quality_analysis['confidence']) / 3
         }
 
+        # Enhanced analysis using directional clustering
+        enhanced_results = self._analyze_directional_clustering_enhanced(
+            normals, current_mask, clustering_before, clustering_after
+        )
+
         return {
             'x_category': x_category,
             'y_category': y_category,
             'hard_soft_index': hard_soft_index,
             'confidence': confidence,
             'quality_analysis': quality_analysis,
-            'color_analysis_before': color_analysis_before,
-            'color_analysis_after': color_analysis_after,
+            'clustering_before': clustering_before,
+            'clustering_after': clustering_after,
+            'enhanced_analysis': enhanced_results,
             'lit_pixel_count': lit_normals.shape[0],
             'total_pixel_count': normals.shape[1] * normals.shape[2]
         }
@@ -268,6 +287,178 @@ class CategoricalLightEstimator:
             'hard_soft_index': 0.5,
             'confidence': {'x_confidence': 0.0, 'y_confidence': 0.0, 'quality_confidence': 0.0, 'overall_confidence': 0.0},
             'quality_analysis': {'spread': 0.0, 'confidence': 0.0}
+        }
+
+    def _analyze_directional_clustering(self, normals, mask=None):
+        """
+        Analyze normal vectors by clustering them into directional categories.
+
+        Args:
+            normals: Normal vectors tensor (B, H, W, 3)
+            mask: Optional binary mask to limit analysis
+
+        Returns:
+            clustering_results: Dictionary with directional cluster analysis
+        """
+        if normals.dim() == 4:
+            flat_normals = normals.view(-1, 3)
+            height, width = normals.shape[1], normals.shape[2]
+        else:
+            flat_normals = normals
+            height, width = 1, normals.shape[0]
+
+        if mask is not None:
+            if mask.dim() == 4:
+                mask = mask.squeeze(-1)
+            mask_flat = mask.view(-1)
+            flat_normals = flat_normals[mask_flat.bool()]
+
+        if flat_normals.shape[0] == 0:
+            return self._empty_directional_clustering()
+
+        # Define directional color clusters
+        clusters = self._define_directional_clusters()
+
+        # Analyze each cluster
+        cluster_results = {}
+        for cluster_name, color_ranges in clusters.items():
+            cluster_normals = self._find_normals_in_clusters(flat_normals, color_ranges)
+            cluster_results[cluster_name] = {
+                'count': cluster_normals.shape[0],
+                'percentage': cluster_normals.shape[0] / flat_normals.shape[0],
+                'mean_normal': torch.mean(cluster_normals, dim=0) if cluster_normals.shape[0] > 0 else torch.zeros(3)
+            }
+
+        return {
+            'clusters': cluster_results,
+            'total_normals': flat_normals.shape[0],
+            'dominant_cluster': max(cluster_results.keys(), key=lambda k: cluster_results[k]['count'])
+        }
+
+    def _define_directional_clusters(self):
+        """
+        Define color ranges for each directional cluster.
+
+        Returns:
+            clusters: Dictionary mapping direction names to color ranges
+        """
+        # Define color ranges for each direction (in RGB space)
+        clusters = {
+            'right': {  # Red-dominant colors (X+)
+                'x_range': [0.4, 1.0],    # Red channel high
+                'y_range': [0.3, 0.7],    # Green channel mid
+                'z_range': [0.3, 0.7]     # Blue channel mid
+            },
+            'left': {   # Cyan-dominant colors (X-)
+                'x_range': [0.0, 0.6],    # Red channel low
+                'y_range': [0.4, 1.0],    # Green channel high
+                'z_range': [0.4, 1.0]     # Blue channel high
+            },
+            'up': {     # Green-dominant colors (Y+)
+                'x_range': [0.3, 0.7],    # Red channel mid
+                'y_range': [0.4, 1.0],    # Green channel high
+                'z_range': [0.3, 0.7]     # Blue channel mid
+            },
+            'down': {   # Purple-dominant colors (Y-)
+                'x_range': [0.4, 1.0],    # Red channel high
+                'y_range': [0.0, 0.6],    # Green channel low
+                'z_range': [0.4, 1.0]     # Blue channel high
+            },
+            'front': {  # Blue-dominant colors (Z+)
+                'x_range': [0.3, 0.7],    # Red channel mid
+                'y_range': [0.3, 0.7],    # Green channel mid
+                'z_range': [0.4, 1.0]     # Blue channel high
+            },
+            'flat': {   # Gray/neutral colors (Z≈0)
+                'x_range': [0.3, 0.7],    # Red channel mid
+                'y_range': [0.3, 0.7],    # Green channel mid
+                'z_range': [0.0, 0.6]     # Blue channel low
+            }
+        }
+
+        return clusters
+
+    def _find_normals_in_clusters(self, normals, color_ranges):
+        """
+        Find normal vectors that fall within specified color ranges.
+
+        Args:
+            normals: Normal vectors tensor (N, 3)
+            color_ranges: Dictionary with x_range, y_range, z_range
+
+        Returns:
+            filtered_normals: Normals within the color ranges
+        """
+        x_min, x_max = color_ranges['x_range']
+        y_min, y_max = color_ranges['y_range']
+        z_min, z_max = color_ranges['z_range']
+
+        # Filter normals based on color ranges
+        mask = (normals[:, 0] >= x_min) & (normals[:, 0] <= x_max) & \
+               (normals[:, 1] >= y_min) & (normals[:, 1] <= y_max) & \
+               (normals[:, 2] >= z_min) & (normals[:, 2] <= z_max)
+
+        return normals[mask]
+
+    def _analyze_directional_clustering_enhanced(self, normals, mask, clustering_before, clustering_after):
+        """
+        Enhanced analysis using directional clustering with luminance correlation.
+
+        Args:
+            normals: Full normal map tensor
+            mask: Binary mask tensor
+            clustering_before: Clustering results for full image
+            clustering_after: Clustering results for lit areas
+
+        Returns:
+            enhanced_results: Advanced lighting analysis
+        """
+        # Calculate lighting effect on each directional cluster
+        lighting_effects = {}
+
+        for cluster_name in clustering_before['clusters'].keys():
+            before_pct = clustering_before['clusters'][cluster_name]['percentage']
+            after_pct = clustering_after['clusters'][cluster_name]['percentage']
+
+            # Calculate how much this cluster is affected by lighting
+            lighting_effect = after_pct - before_pct
+            lighting_effects[cluster_name] = {
+                'before_percentage': before_pct,
+                'after_percentage': after_pct,
+                'lighting_effect': lighting_effect,
+                'is_illuminated': lighting_effect > 0.05  # Threshold for significant illumination
+            }
+
+        # Determine primary lighting direction based on cluster effects
+        illuminated_clusters = [name for name, effect in lighting_effects.items() if effect['is_illuminated']]
+
+        # Map cluster illumination to lighting direction
+        direction_mapping = {
+            'right': 'right',
+            'left': 'left',
+            'up': 'top',
+            'down': 'bottom',
+            'front': 'front'
+        }
+
+        detected_directions = [direction_mapping.get(cluster, 'unknown') for cluster in illuminated_clusters]
+
+        return {
+            'lighting_effects': lighting_effects,
+            'illuminated_clusters': illuminated_clusters,
+            'detected_directions': detected_directions,
+            'primary_direction': max(detected_directions, default='unknown') if detected_directions else 'diffuse'
+        }
+
+    def _empty_directional_clustering(self):
+        """Return empty clustering results"""
+        clusters = {name: {'count': 0, 'percentage': 0.0, 'mean_normal': torch.zeros(3)}
+                   for name in ['right', 'left', 'up', 'down', 'front', 'flat']}
+
+        return {
+            'clusters': clusters,
+            'total_normals': 0,
+            'dominant_cluster': 'none'
         }
 
     def _detect_normal_format(self, normals):

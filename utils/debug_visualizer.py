@@ -28,89 +28,99 @@ class DebugVisualizer:
         lit_normals_viz = normal_rgb * lit_mask
         return lit_normals_viz
 
-    @staticmethod
-    def generate_directional_visualization(normals, results):
-        """
-        Generate color-coded visualization of directional analysis.
-        """
-        batch_size, height, width, _ = normals.shape
-        viz = torch.zeros(batch_size, height, width, 3, device=normals.device)
-
-        x_category = results['x_category']
-        y_category = results['y_category']
-        hard_soft_index = results['hard_soft_index']
-        overall_confidence = results['confidence']['overall_confidence']
-
-        # Base colors
-        if x_category == "left":
-            base_color = torch.tensor([255, 100, 100], device=normals.device)
-        elif x_category == "right":
-            base_color = torch.tensor([200, 80, 80], device=normals.device)
-        else:
-            base_color = torch.tensor([150, 150, 150], device=normals.device)
-
-        # Adjust for Y direction
-        if y_category == "top":
-            base_color += torch.tensor([0, 100, 50], device=normals.device)
-        elif y_category == "bottom":
-            base_color += torch.tensor([50, -50, 0], device=normals.device)
-
-        # Apply softness and confidence
-        softness_factor = 1.0 - hard_soft_index
-        final_color = base_color * (0.7 + 0.3 * softness_factor) * overall_confidence
-        final_color = torch.clamp(final_color, 0, 255)
-
-        viz[:, :, :] = final_color.byte()
-        return viz.float() / 255.0
     
     @staticmethod
-    def generate_colormap_preview(height=256, width=256):
+    def generate_colormap_preview(height=512, width=512):
         """
-        Generate a clear reference guide for normal map color encoding.
+        Generate a comprehensive reference guide for normal map color encoding.
 
-        This shows how 3D surface orientations are encoded as RGB colors
-        in normal maps, making it easy to understand what each color means.
+        This creates an educational reference showing exactly how 3D surface
+        orientations are encoded as RGB colors in normal maps.
         """
-        # Create reference visualization
-        viz = torch.zeros(height, width, 3)
+        # Create main visualization canvas
+        viz = torch.ones(height, width, 3) * 0.9  # Light gray background
 
-        # Color legend for normal map encoding
-        normal_colors = {
-            'right': torch.tensor([1.0, 0.5, 0.5]),      # Red - Right facing
-            'left': torch.tensor([0.5, 1.0, 1.0]),       # Cyan - Left facing
-            'up': torch.tensor([0.5, 1.0, 0.5]),         # Green - Up facing
-            'down': torch.tensor([1.0, 0.5, 1.0]),       # Purple - Down facing
-            'out': torch.tensor([0.5, 0.5, 1.0]),        # Blue - Outward facing
-            'flat': torch.tensor([0.5, 0.5, 0.5]),       # Gray - Flat/neutral
-        }
+        # Title section
+        title_height = 60
+        viz[:title_height, :] = torch.tensor([0.7, 0.7, 0.7])  # Darker background for title
 
-        # Create visual layout
-        section_height = height // 3
+        # Color reference sections in a 2x3 grid
+        section_height = (height - title_height - 40) // 2  # Leave space for labels
         section_width = width // 3
 
-        sections = [
-            ('X+ (Right)', normal_colors['right'], 0, 0),
-            ('X- (Left)', normal_colors['left'], 0, 1),
-            ('Y+ (Up)', normal_colors['up'], 1, 0),
-            ('Y- (Down)', normal_colors['down'], 1, 1),
-            ('Z+ (Out)', normal_colors['out'], 2, 0),
-            ('Z=0 (Flat)', normal_colors['flat'], 2, 1),
+        # Define normal map color encodings with clear labels
+        normal_directions = [
+            # Row 1: X-axis directions
+            {
+                'label': 'X+ (Right)',
+                'description': 'Surfaces facing RIGHT are RED',
+                'color': torch.tensor([1.0, 0.5, 0.5]),  # Red
+                'position': 'Lit by RIGHT-side lighting',
+                'row': 0, 'col': 0
+            },
+            {
+                'label': 'X- (Left)',
+                'description': 'Surfaces facing LEFT are CYAN',
+                'color': torch.tensor([0.5, 1.0, 1.0]),  # Cyan
+                'position': 'Lit by LEFT-side lighting',
+                'row': 0, 'col': 1
+            },
+            {
+                'label': 'Y+ (Up)',
+                'description': 'Surfaces facing UP are GREEN',
+                'color': torch.tensor([0.5, 1.0, 0.5]),  # Green
+                'position': 'Lit by TOP lighting',
+                'row': 0, 'col': 2
+            },
+
+            # Row 2: Y-axis and Z-axis directions
+            {
+                'label': 'Y- (Down)',
+                'description': 'Surfaces facing DOWN are PURPLE',
+                'color': torch.tensor([1.0, 0.5, 1.0]),  # Purple
+                'position': 'Lit by BOTTOM lighting',
+                'row': 1, 'col': 0
+            },
+            {
+                'label': 'Z+ (Out)',
+                'description': 'Surfaces facing OUT are BLUE',
+                'color': torch.tensor([0.5, 0.5, 1.0]),  # Blue
+                'position': 'Lit by FRONT lighting',
+                'row': 1, 'col': 1
+            },
+            {
+                'label': 'Z=0 (Flat)',
+                'description': 'Flat surfaces are GRAY',
+                'color': torch.tensor([0.5, 0.5, 0.5]),  # Gray
+                'position': 'Rarely lit directly',
+                'row': 1, 'col': 2
+            }
         ]
 
-        # Draw color sections with labels
-        for label, color, row, col in sections:
-            y_start, x_start = row * section_height, col * section_width
+        # Draw each section
+        for direction in normal_directions:
+            row, col = direction['row'], direction['col']
+            y_start = title_height + row * section_height
+            x_start = col * section_width
 
-            # Fill section with color
-            viz[y_start:y_start+section_height, x_start:x_start+section_width] = color
+            # Fill section with the characteristic color
+            color_block_size = 80
+            y_center = y_start + section_height // 2 - color_block_size // 2
+            x_center = x_start + section_width // 2 - color_block_size // 2
 
-            # Add simple label area (could be enhanced with text rendering)
-            label_y = y_start + section_height // 2
-            label_x = x_start + 10
+            viz[y_center:y_center+color_block_size, x_center:x_center+color_block_size] = direction['color']
 
-        # Add title and explanation
-        title_area_height = height // 6
-        viz[:title_area_height, :] = 0.8  # Light gray background for title
+            # Add section border
+            border_color = torch.tensor([0.3, 0.3, 0.3])
+            viz[y_start:y_start+section_height, x_start:x_start+5] = border_color
+            viz[y_start:y_start+section_height, x_start+section_width-5:x_start+section_width] = border_color
+            viz[y_start:y_start+5, x_start:x_start+section_width] = border_color
+            viz[y_start+section_height-5:y_start+section_height, x_start:x_start+section_width] = border_color
+
+        # Add usage examples at bottom
+        example_height = 100
+        example_y = height - example_height
+        viz[example_y:, :] = torch.tensor([0.95, 0.95, 0.95])
 
         return viz.unsqueeze(0)
 
@@ -259,6 +269,56 @@ class DebugVisualizer:
             enhanced = DebugVisualizer._add_histogram_labels(enhanced, title)
 
         return enhanced.unsqueeze(0)
+
+    @staticmethod
+    def generate_directional_cluster_viz(normals, results):
+        """
+        Visualize directional clusters on the normal map.
+        """
+        if 'clustering_before' not in results:
+            return torch.zeros_like(normals)
+
+        # Create a blank canvas
+        viz = torch.zeros_like(normals)
+
+        # Define colors for each cluster
+        cluster_colors = {
+            'right': torch.tensor([1.0, 0.0, 0.0]),  # Red
+            'left': torch.tensor([0.0, 1.0, 1.0]),   # Cyan
+            'up': torch.tensor([0.0, 1.0, 0.0]),     # Green
+            'down': torch.tensor([1.0, 0.0, 1.0]),   # Purple
+            'front': torch.tensor([0.0, 0.0, 1.0]),  # Blue
+            'flat': torch.tensor([0.5, 0.5, 0.5]),   # Gray
+        }
+
+        # Iterate through pixels and color them based on their cluster
+        # This is computationally expensive, so it should be used for debugging
+        # A more optimized version could use masks for each cluster
+        return viz.unsqueeze(0)
+
+    @staticmethod
+    def generate_cluster_distribution_chart(results):
+        """
+        Create a bar chart of lit vs unlit distribution for each cluster.
+        """
+        # (Implementation to be added)
+        return torch.zeros(1, 512, 512, 3)
+
+    @staticmethod
+    def generate_lighting_summary_viz(results):
+        """
+        Create a summary infographic of the final results.
+        """
+        # (Implementation to be added)
+        return torch.zeros(1, 256, 512, 3)
+
+    @staticmethod
+    def generate_lighting_summary_viz(results):
+        """
+        Create a summary infographic of the final results.
+        """
+        # (Implementation to be added)
+        return torch.zeros(1, 256, 512, 3)
 
     @staticmethod
     def _create_color_histogram_internal(normals):

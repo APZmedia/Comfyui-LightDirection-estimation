@@ -39,8 +39,8 @@ class NormalMapLightEstimator:
     RETURN_NAMES = (
         "x_direction", "y_direction", "combined_direction", "hard_soft_index",
         "x_confidence", "y_confidence", "overall_confidence", "spread_value",
-        "debug_mask", "directional_viz", "lit_normals_viz", "colormap_preview",
-        "histogram_before", "histogram_after", "color_histogram",
+        "debug_mask", "lit_normals_viz", "colormap_preview",
+        "directional_cluster_viz", "cluster_distribution_chart", "lighting_summary_viz",
     )
     
     FUNCTION = "estimate_lighting"
@@ -79,25 +79,19 @@ class NormalMapLightEstimator:
         spread_value = results['quality_analysis']['spread']
 
         debug_mask = DebugVisualizer.generate_debug_mask(mask)
-        directional_viz = DebugVisualizer.generate_directional_visualization(normal_map, results)
         lit_normals_viz = DebugVisualizer.generate_lit_normals_visualization(normal_map, mask)
         colormap_preview = DebugVisualizer.generate_colormap_preview()
 
-        # Generate separate histograms for before/after masking
-        histogram_before = DebugVisualizer.generate_histogram_before(normal_map)
-        # Ensure lit_normals is in correct format for histogram generation
-        if lit_normals.dim() == 2:
-            lit_normals_4d = lit_normals.unsqueeze(0)  # Add batch dimension
-        else:
-            lit_normals_4d = lit_normals
-        histogram_after = DebugVisualizer.generate_histogram_after(lit_normals_4d)
-        color_histogram = DebugVisualizer.generate_color_histogram(normal_map)  # Combined view
+        # Generate new debug visualizations
+        directional_cluster_viz = DebugVisualizer.generate_directional_cluster_viz(normal_map, results)
+        cluster_distribution_chart = DebugVisualizer.generate_cluster_distribution_chart(results)
+        lighting_summary_viz = DebugVisualizer.generate_lighting_summary_viz(results)
 
         return (
             x_direction, y_direction, combined_direction, hard_soft_index,
             x_confidence, y_confidence, overall_confidence, spread_value,
-            debug_mask, directional_viz, lit_normals_viz, colormap_preview,
-            histogram_before, histogram_after, color_histogram
+            debug_mask, lit_normals_viz, colormap_preview,
+            directional_cluster_viz, cluster_distribution_chart, lighting_summary_viz
         )
 
 

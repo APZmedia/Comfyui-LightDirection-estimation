@@ -290,9 +290,9 @@ class NormalMapLightEstimator:
         
         # Add legend
         legend_elements = [
-            plt.Rectangle((0,0),1,1, facecolor='red', label='Down'),
+            plt.Rectangle((0,0),1,1, facecolor='red', label='Light from Above'),
             plt.Rectangle((0,0),1,1, facecolor='green', label='Center'),
-            plt.Rectangle((0,0),1,1, facecolor='blue', label='Up')
+            plt.Rectangle((0,0),1,1, facecolor='blue', label='Light from Below')
         ]
         ax.legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1, 1))
         

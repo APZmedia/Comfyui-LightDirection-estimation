@@ -75,3 +75,82 @@ class DebugVisualizer:
         # Ensure proper format for ComfyUI
         tensor_img = tensor_img.clamp(0.0, 1.0).type(torch.float32)
         return tensor_img
+    
+    @staticmethod
+    def create_threshold_classification_chart(normal_map, x_threshold, y_threshold):
+        """
+        Create a chart showing threshold-based classification results.
+        """
+        import torch
+        import numpy as np
+        
+        plt.switch_backend('Agg')
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+        
+        # Convert normal map to -1 to +1 range if needed
+        if normal_map.max() <= 1.0:
+            normals_x = (normal_map[:, :, :, 0] * 2.0) - 1.0
+            normals_y = (normal_map[:, :, :, 1] * 2.0) - 1.0
+        else:
+            normals_x = normal_map[:, :, :, 0]
+            normals_y = normal_map[:, :, :, 1]
+        
+        # Flatten for analysis
+        flat_x = normals_x.view(-1)
+        flat_y = normals_y.view(-1)
+        
+        # X Direction Classification
+        x_left = (flat_x < -x_threshold).sum().item()
+        x_center = ((flat_x >= -x_threshold) & (flat_x <= x_threshold)).sum().item()
+        x_right = (flat_x > x_threshold).sum().item()
+        x_total = len(flat_x)
+        
+        x_categories = ['Light from Right', 'Center', 'Light from Left']
+        x_counts = [x_left, x_center, x_right]
+        x_percentages = [count / x_total * 100 for count in x_counts]
+        
+        bars1 = ax1.bar(x_categories, x_percentages, color=['red', 'green', 'blue'])
+        ax1.set_title(f'X Direction Classification (threshold={x_threshold})', fontsize=12)
+        ax1.set_ylabel('Percentage of Pixels')
+        ax1.set_ylim(0, 100)
+        
+        # Add percentage labels on bars
+        for bar, pct in zip(bars1, x_percentages):
+            height = bar.get_height()
+            ax1.text(bar.get_x() + bar.get_width()/2., height + 1,
+                    f'{pct:.1f}%', ha='center', va='bottom')
+        
+        # Y Direction Classification
+        y_above = (flat_y < -y_threshold).sum().item()
+        y_center = ((flat_y >= -y_threshold) & (flat_y <= y_threshold)).sum().item()
+        y_below = (flat_y > y_threshold).sum().item()
+        y_total = len(flat_y)
+        
+        y_categories = ['Light from Above', 'Center', 'Light from Below']
+        y_counts = [y_above, y_center, y_below]
+        y_percentages = [count / y_total * 100 for count in y_counts]
+        
+        bars2 = ax2.bar(y_categories, y_percentages, color=['red', 'green', 'blue'])
+        ax2.set_title(f'Y Direction Classification (threshold={y_threshold})', fontsize=12)
+        ax2.set_ylabel('Percentage of Pixels')
+        ax2.set_ylim(0, 100)
+        
+        # Add percentage labels on bars
+        for bar, pct in zip(bars2, y_percentages):
+            height = bar.get_height()
+            ax2.text(bar.get_x() + bar.get_width()/2., height + 1,
+                    f'{pct:.1f}%', ha='center', va='bottom')
+        
+        plt.tight_layout()
+        
+        # Convert to tensor
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
+        plt.close(fig)
+        buf.seek(0)
+        
+        pil_img = Image.open(buf).convert('RGB')
+        img_array = np.array(pil_img).astype(np.float32) / 255.0
+        tensor_img = torch.from_numpy(img_array).unsqueeze(0)
+        
+        return tensor_img

@@ -125,8 +125,8 @@ class NormalMapLightEstimator:
 
         debug_mask = DebugVisualizer.generate_debug_mask(mask)
         lit_normals_viz = DebugVisualizer.generate_lit_normals_visualization(normal_map, mask)
-        # Generate cluster delta visualization
-        cluster_delta_chart = DebugVisualizer.create_cluster_delta_chart(results)
+        # Generate threshold-based classification chart
+        cluster_delta_chart = DebugVisualizer.create_threshold_classification_chart(normal_map, x_threshold, y_threshold)
         
         # Generate threshold preview images
         x_threshold_preview = self.create_x_threshold_preview(normal_map, x_threshold)

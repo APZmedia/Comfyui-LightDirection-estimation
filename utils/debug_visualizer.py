@@ -36,11 +36,18 @@ class DebugVisualizer:
         plt.switch_backend('Agg')  # Required for headless environments
         fig, ax = plt.subplots(figsize=(12, 6))
         
-        clusters = ['Right', 'Left', 'Up', 'Down', 'Front', 'Flat']
-        before = [cluster_results['true_geometry']['clusters'][c]['percentage'] for c in ['right', 'left', 'up', 'down', 'front', 'flat']]
-        after = [cluster_results['perceived_geometry']['clusters'][c]['percentage'] for c in ['right', 'left', 'up', 'down', 'front', 'flat']]
+        # Use the actual cluster names defined in CategoricalLightEstimator
+        cluster_names = ['front', 'back', 'left', 'right', 'up', 'down']
+        cluster_labels = ['Front', 'Back', 'Left', 'Right', 'Up', 'Down']
+        
+        # Safely get cluster percentages, defaulting to 0.0 if cluster doesn't exist
+        def safe_get_percentage(clusters_dict, cluster_name):
+            return clusters_dict.get(cluster_name, {}).get('percentage', 0.0)
+        
+        before = [safe_get_percentage(cluster_results['true_geometry']['clusters'], c) for c in cluster_names]
+        after = [safe_get_percentage(cluster_results['perceived_geometry']['clusters'], c) for c in cluster_names]
 
-        x = np.arange(len(clusters))
+        x = np.arange(len(cluster_labels))
         width = 0.35
 
         rects1 = ax.bar(x - width/2, before, width, label='Original', color='#1f77b4')
@@ -49,7 +56,7 @@ class DebugVisualizer:
         ax.set_ylabel('Percentage of Normals')
         ax.set_title('True Geometry vs Lighting Perception Clusters', fontsize=14, pad=15)
         ax.set_xticks(x)
-        ax.set_xticklabels(clusters)
+        ax.set_xticklabels(cluster_labels)
         ax.legend()
         ax.grid(True, linestyle='--', alpha=0.6)
 

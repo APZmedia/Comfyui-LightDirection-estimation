@@ -57,7 +57,7 @@ class CategoricalLightEstimator:
             lit_normals = lit_normals.unsqueeze(0)
 
         # Analyze directional clustering after masking
-        clustering_after = self._analyze_directional_clustering(lit_normals.unsqueeze(0), current_mask.unsqueeze(0))
+        clustering_after = self._analyze_directional_clustering(lit_normals, None)
 
         # Enhanced analysis using directional clustering
         enhanced_results = self._analyze_directional_clustering_enhanced(

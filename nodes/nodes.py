@@ -32,15 +32,16 @@ class NormalMapLightEstimator:
         }
     
     RETURN_TYPES = (
-        "STRING", "STRING", "STRING", "FLOAT", "FLOAT", "FLOAT", "FLOAT", "FLOAT",
-        "IMAGE", "IMAGE", "IMAGE", "IMAGE", "IMAGE", "IMAGE", "IMAGE",
+        "STRING", "STRING", "STRING",  # x_dir, y_dir, combined_dir
+        "FLOAT", "FLOAT", "FLOAT", "FLOAT", "FLOAT",  # hard_soft + confidences
+        "IMAGE", "IMAGE", "IMAGE"  # debug_mask, lit_normals, delta_chart
     )
 
     RETURN_NAMES = (
-        "x_direction", "y_direction", "combined_direction", "hard_soft_index",
-        "x_confidence", "y_confidence", "overall_confidence", "spread_value",
-        "debug_mask", "lit_normals_viz", "colormap_preview",
-        "directional_cluster_viz", "cluster_distribution_chart", "lighting_summary_viz",
+        "x_direction", "y_direction", "combined_direction",
+        "hard_soft_index", "x_confidence", "y_confidence", 
+        "overall_confidence", "spread_value",
+        "debug_mask", "lit_normals_viz", "cluster_delta_chart"
     )
     
     FUNCTION = "estimate_lighting"
@@ -52,6 +53,12 @@ class NormalMapLightEstimator:
         """
         Enhanced categorical light direction estimation.
         """
+        # Downscale the larger image to match the smaller one
+        if normal_map.shape[1] > luma_image.shape[1] or normal_map.shape[2] > luma_image.shape[2]:
+            normal_map = torch.nn.functional.interpolate(normal_map.permute(0, 3, 1, 2), size=(luma_image.shape[1], luma_image.shape[2]), mode='bilinear', align_corners=False).permute(0, 2, 3, 1)
+        elif luma_image.shape[1] > normal_map.shape[1] or luma_image.shape[2] > normal_map.shape[2]:
+            luma_image = torch.nn.functional.interpolate(luma_image.permute(0, 3, 1, 2), size=(normal_map.shape[1], normal_map.shape[2]), mode='bilinear', align_corners=False).permute(0, 2, 3, 1)
+
         luma_processor = LumaMaskProcessor()
         light_estimator = CategoricalLightEstimator(
             x_threshold, y_threshold, central_threshold,
@@ -80,18 +87,14 @@ class NormalMapLightEstimator:
 
         debug_mask = DebugVisualizer.generate_debug_mask(mask)
         lit_normals_viz = DebugVisualizer.generate_lit_normals_visualization(normal_map, mask)
-        colormap_preview = DebugVisualizer.generate_colormap_preview()
-
-        # Generate new debug visualizations
-        directional_cluster_viz = DebugVisualizer.generate_directional_cluster_viz(normal_map, results)
-        cluster_distribution_chart = DebugVisualizer.generate_cluster_distribution_chart(results)
-        lighting_summary_viz = DebugVisualizer.generate_lighting_summary_viz(results)
+        # Generate cluster delta visualization
+        cluster_delta_chart = DebugVisualizer.create_cluster_delta_chart(results)
 
         return (
-            x_direction, y_direction, combined_direction, hard_soft_index,
-            x_confidence, y_confidence, overall_confidence, spread_value,
-            debug_mask, lit_normals_viz, colormap_preview,
-            directional_cluster_viz, cluster_distribution_chart, lighting_summary_viz
+            x_direction, y_direction, combined_direction,
+            hard_soft_index, x_confidence, y_confidence, 
+            overall_confidence, spread_value,
+            debug_mask, lit_normals_viz, cluster_delta_chart
         )
 
 

@@ -2,6 +2,7 @@ import torch
 from ..utils.light_estimator import CategoricalLightEstimator
 from ..utils.luma_mask_processor import LumaMaskProcessor
 from ..utils.debug_visualizer import DebugVisualizer
+from ..utils.ire_shadow_analyzer import IREShadowAnalyzer
 from .separated_nodes import LightImageProcessor, LightDistributionAnalyzer
 
 class NormalMapLightEstimator:
@@ -25,34 +26,45 @@ class NormalMapLightEstimator:
                 "central_threshold": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 1.0, "step": 0.01}),
                 "hard_light_threshold": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 1.0, "step": 0.01}),
                 "soft_light_threshold": ("FLOAT", {"default": 0.35, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "shadow_ire_threshold": ("FLOAT", {"default": 20.0, "min": 0.0, "max": 50.0, "step": 1.0}),
+                "transition_sensitivity": ("FLOAT", {"default": 0.1, "min": 0.01, "max": 1.0, "step": 0.01}),
             },
             "optional": {
                 "format_mode": (["auto", "manual"], {"default": "auto"}),
                 "normal_standard": (["OpenGL", "DirectX", "World_Space", "Object_Space"], {"default": "OpenGL"}),
-                "analysis_method": (["advanced", "legacy"], {"default": "advanced"}),
+                "analysis_method": (["advanced", "legacy", "combined"], {"default": "combined"}),
                 "exclusion_mask": ("MASK",),
+                "ire_analysis_weight": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.1}),
             }
         }
     
     RETURN_TYPES = (
+        # Original outputs
         "STRING", "STRING", "STRING",  # x_dir, y_dir, combined_dir
         "STRING", "STRING", "STRING", "STRING", "STRING",  # hard_soft + confidences
-        "IMAGE", "IMAGE", "IMAGE", "IMAGE", "IMAGE"  # debug_mask, lit_normals, delta_chart, x_preview, y_preview
+        "IMAGE", "IMAGE", "IMAGE", "IMAGE", "IMAGE",  # debug_mask, lit_normals, delta_chart, x_preview, y_preview
+        # IRE analysis outputs (simplified)
+        "IMAGE", "IMAGE", "IMAGE",  # false_color_ire, shadow_mask, soft_shadow_mask
+        "STRING", "STRING", "FLOAT", "FLOAT"  # shadow_character, transition_quality, soft_ratio, hard_ratio
     )
 
     RETURN_NAMES = (
+        # Original outputs
         "x_direction", "y_direction", "combined_direction",
         "hard_soft_index", "x_confidence", "y_confidence", 
         "overall_confidence", "spread_value",
-        "debug_mask", "lit_normals_viz", "cluster_delta_chart", "x_threshold_preview", "y_threshold_preview"
+        "debug_mask", "lit_normals_viz", "cluster_delta_chart", "x_threshold_preview", "y_threshold_preview",
+        # IRE analysis outputs (simplified)
+        "false_color_ire", "shadow_mask", "soft_shadow_mask",
+        "shadow_character", "transition_quality", "soft_ratio", "hard_ratio"
     )
     
     FUNCTION = "estimate_lighting"
     
     def estimate_lighting(self, normal_map, luma_image, luma_threshold, curve_type,
                         x_threshold, y_threshold_upper, y_threshold_lower, central_threshold,
-                        hard_light_threshold, soft_light_threshold,
-                        format_mode="auto", normal_standard="OpenGL", analysis_method="advanced", exclusion_mask=None):
+                        hard_light_threshold, soft_light_threshold, shadow_ire_threshold, transition_sensitivity,
+                        format_mode="auto", normal_standard="OpenGL", analysis_method="combined", exclusion_mask=None, ire_analysis_weight=0.5):
         """
         Enhanced categorical light direction estimation.
         """
@@ -126,6 +138,18 @@ class NormalMapLightEstimator:
         else:
             print("Using ADVANCED analysis method (clustering-based)")
             results = light_estimator.analyze_directional_categories(normal_map, mask)
+        
+        # Perform IRE shadow analysis if combined or IRE-only method
+        ire_results = {}
+        if analysis_method in ["combined", "ire_only"]:
+            print("--- Performing IRE Shadow Analysis ---")
+            ire_analyzer = IREShadowAnalyzer(
+                shadow_ire_threshold=shadow_ire_threshold,
+                transition_sensitivity=transition_sensitivity
+            )
+            ire_results = ire_analyzer.generate_ire_analysis_report(luma_image)
+            print(f"IRE Shadow Character: {ire_results['shadow_classification']['shadow_character']}")
+            print(f"IRE Transition Quality: {ire_results['shadow_classification']['transition_quality']}")
 
         # Ensure all outputs are strings
         x_direction = str(results['x_category'])
@@ -170,12 +194,89 @@ class NormalMapLightEstimator:
         
         print(f"Generated X threshold preview with threshold: {x_threshold}")
         print(f"Generated Y threshold preview with upper: {y_threshold_upper}, lower: {y_threshold_lower}")
+        
+        # Prepare IRE analysis outputs
+        if ire_results:
+            # IRE visualizations - apply mask to false color IRE
+            false_color_ire_raw = ire_results['false_color_visualization']
+            # Apply the same mask used for normal map analysis to IRE visualization
+            # This ensures IRE false color only shows in areas being analyzed (like debug_mask)
+            false_color_ire = false_color_ire_raw * mask.unsqueeze(-1).float()
+            
+            # Ensure IRE masks match input image dimensions
+            shadow_mask_raw = ire_results['transition_analysis']['shadow_mask']
+            soft_shadow_mask_raw = ire_results['transition_analysis']['soft_shadow_mask']
+            
+            # Resize to match input image if needed
+            if shadow_mask_raw.shape != luma_image.shape[:3]:
+                shadow_mask_raw = torch.nn.functional.interpolate(
+                    shadow_mask_raw.unsqueeze(0).unsqueeze(0).float(),
+                    size=(luma_image.shape[1], luma_image.shape[2]),
+                    mode='nearest'
+                ).squeeze(0).squeeze(0)
+            
+            if soft_shadow_mask_raw.shape != luma_image.shape[:3]:
+                soft_shadow_mask_raw = torch.nn.functional.interpolate(
+                    soft_shadow_mask_raw.unsqueeze(0).unsqueeze(0).float(),
+                    size=(luma_image.shape[1], luma_image.shape[2]),
+                    mode='nearest'
+                ).squeeze(0).squeeze(0)
+            
+            shadow_mask = shadow_mask_raw.unsqueeze(-1).float()
+            soft_shadow_mask = soft_shadow_mask_raw.unsqueeze(-1).float()
+            
+            # IRE text outputs
+            shadow_character = ire_results['shadow_classification']['shadow_character']
+            transition_quality = ire_results['shadow_classification']['transition_quality']
+            
+            # IRE numerical outputs
+            soft_ratio = ire_results['transition_analysis']['soft_shadow_ratio'].item()
+            hard_ratio = ire_results['transition_analysis']['hard_shadow_ratio'].item()
+            
+            # IRE analysis completed successfully
+            print("--- IRE Analysis Completed ---")
+        else:
+            # Default values when no IRE analysis
+            false_color_ire = torch.zeros_like(luma_image)
+            shadow_mask = torch.zeros_like(luma_image[..., :1])
+            soft_shadow_mask = torch.zeros_like(luma_image[..., :1])
+            shadow_character = "N/A"
+            transition_quality = "N/A"
+            soft_ratio = 0.0
+            hard_ratio = 0.0
+
+        # Ensure all image outputs have valid dimensions and data types
+        def ensure_valid_image(img_tensor, reference_shape):
+            """Ensure image tensor has valid dimensions and data type for ComfyUI"""
+            if img_tensor.dim() == 2:
+                img_tensor = img_tensor.unsqueeze(-1)
+            if img_tensor.shape[:2] != reference_shape[:2]:
+                img_tensor = torch.nn.functional.interpolate(
+                    img_tensor.permute(2, 0, 1).unsqueeze(0),
+                    size=(reference_shape[1], reference_shape[2]),
+                    mode='nearest'
+                ).squeeze(0).permute(1, 2, 0)
+            return img_tensor.clamp(0, 1).float()
+        
+        # Apply safety checks to all image outputs
+        debug_mask = ensure_valid_image(debug_mask, luma_image.shape)
+        lit_normals_viz = ensure_valid_image(lit_normals_viz, luma_image.shape)
+        cluster_delta_chart = ensure_valid_image(cluster_delta_chart, luma_image.shape)
+        x_threshold_preview = ensure_valid_image(x_threshold_preview, luma_image.shape)
+        y_threshold_preview = ensure_valid_image(y_threshold_preview, luma_image.shape)
+        false_color_ire = ensure_valid_image(false_color_ire, luma_image.shape)
+        shadow_mask = ensure_valid_image(shadow_mask, luma_image.shape)
+        soft_shadow_mask = ensure_valid_image(soft_shadow_mask, luma_image.shape)
 
         return (
+            # Original outputs
             x_direction, y_direction, combined_direction,
             hard_soft_index, x_confidence, y_confidence, 
             overall_confidence, spread_value,
-            debug_mask, lit_normals_viz, cluster_delta_chart, x_threshold_preview, y_threshold_preview
+            debug_mask, lit_normals_viz, cluster_delta_chart, x_threshold_preview, y_threshold_preview,
+            # IRE analysis outputs (simplified)
+            false_color_ire, shadow_mask, soft_shadow_mask,
+            shadow_character, transition_quality, soft_ratio, hard_ratio
         )
     
     @staticmethod
@@ -225,6 +326,7 @@ class NormalMapLightEstimator:
             return "Hard"
         else:
             return "Very Hard"
+    
     
     @staticmethod
     def create_x_threshold_preview(normal_map, x_threshold):
@@ -355,16 +457,24 @@ class NormalMapLightEstimator:
 
 # Import the separated nodes
 from .separated_nodes import LightImageProcessor, LightDistributionAnalyzer
+from .ire_shadow_nodes import IREShadowAnalyzerNode, IREShadowComparisonNode
+from .enhanced_light_estimator import EnhancedLightEstimator
 
 # Make them available for ComfyUI registration
 NODE_CLASS_MAPPINGS = {
     "NormalMapLightEstimator": NormalMapLightEstimator,
     "LightImageProcessor": LightImageProcessor,
     "LightDistributionAnalyzer": LightDistributionAnalyzer,
+    "IREShadowAnalyzer": IREShadowAnalyzerNode,
+    "IREShadowComparison": IREShadowComparisonNode,
+    "EnhancedLightEstimator": EnhancedLightEstimator,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "NormalMapLightEstimator": "Normal Map Light Estimator (Monolithic)",
     "LightImageProcessor": "Light Image Processor",
     "LightDistributionAnalyzer": "Light Distribution Analyzer",
+    "IREShadowAnalyzer": "IRE Shadow Analyzer",
+    "IREShadowComparison": "IRE Shadow Comparison",
+    "EnhancedLightEstimator": "Enhanced Light Estimator (IRE + Normal)",
 }

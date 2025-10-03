@@ -7,12 +7,13 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 class CategoricalLightEstimator:
-    def __init__(self, x_threshold=0.4, y_threshold=0.1, central_threshold=0.3,
+    def __init__(self, x_threshold=0.4, y_threshold_upper=0.1, y_threshold_lower=0.1, central_threshold=0.3,
                  hard_light_threshold=0.15, soft_light_threshold=0.35,
                  format_mode="auto", normal_standard="OpenGL"):
         # Initialize thresholds
         self.x_threshold = x_threshold
-        self.y_threshold = y_threshold
+        self.y_threshold_upper = y_threshold_upper
+        self.y_threshold_lower = y_threshold_lower
         self.central_threshold = central_threshold
         self.hard_light_threshold = hard_light_threshold
         self.soft_light_threshold = soft_light_threshold
@@ -245,9 +246,9 @@ class CategoricalLightEstimator:
         
         # Y direction classification  
         y_mean = mean_normal[1].item()
-        if y_mean > self.y_threshold:
+        if y_mean > self.y_threshold_upper:
             y_category = 'above'  # Light from above (surfaces point up)
-        elif y_mean < -self.y_threshold:
+        elif y_mean < -self.y_threshold_lower:
             y_category = 'below'  # Light from below (surfaces point down)
         else:
             y_category = 'center'
@@ -423,9 +424,9 @@ class CategoricalLightEstimator:
         """
         mean_y = y_analysis['mean_y']
         
-        if mean_y > self.y_threshold:
+        if mean_y > self.y_threshold_upper:
             return "above"  # Light from above (surfaces point up)
-        elif mean_y < -self.y_threshold:
+        elif mean_y < -self.y_threshold_lower:
             return "below"  # Light from below (surfaces point down)
         else:
             return "center"

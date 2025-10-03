@@ -77,7 +77,7 @@ class DebugVisualizer:
         return tensor_img
     
     @staticmethod
-    def create_threshold_classification_chart(normal_map, x_threshold, y_threshold, mask=None):
+    def create_threshold_classification_chart(normal_map, x_threshold, y_threshold_upper, y_threshold_lower, mask=None):
         """
         Create a chart showing threshold-based classification results.
         Shows original normal values vs lit-only masked values comparison.
@@ -105,9 +105,9 @@ class DebugVisualizer:
         x_right_all = (flat_x > x_threshold).sum().item()
         x_total_all = len(flat_x)
         
-        y_above_all = (flat_y < -y_threshold).sum().item()
-        y_center_all = ((flat_y >= -y_threshold) & (flat_y <= y_threshold)).sum().item()
-        y_below_all = (flat_y > y_threshold).sum().item()
+        y_above_all = (flat_y > y_threshold_upper).sum().item()
+        y_center_all = ((flat_y >= -y_threshold_lower) & (flat_y <= y_threshold_upper)).sum().item()
+        y_below_all = (flat_y < -y_threshold_lower).sum().item()
         y_total_all = len(flat_y)
         
         # Calculate lit-only distribution if mask provided
@@ -142,9 +142,9 @@ class DebugVisualizer:
             x_right_lit = (lit_x > x_threshold).sum().item()
             x_total_lit = len(lit_x)
             
-            y_above_lit = (lit_y < -y_threshold).sum().item()
-            y_center_lit = ((lit_y >= -y_threshold) & (lit_y <= y_threshold)).sum().item()
-            y_below_lit = (lit_y > y_threshold).sum().item()
+            y_above_lit = (lit_y > y_threshold_upper).sum().item()
+            y_center_lit = ((lit_y >= -y_threshold_lower) & (lit_y <= y_threshold_upper)).sum().item()
+            y_below_lit = (lit_y < -y_threshold_lower).sum().item()
             y_total_lit = len(lit_y)
             
             # Create 2x2 subplot layout
@@ -185,7 +185,7 @@ class DebugVisualizer:
             y_percentages_all = [count / y_total_all * 100 for count in y_counts_all]
             
             bars3 = ax3.bar(y_categories, y_percentages_all, color=['red', 'green', 'blue'])
-            ax3.set_title(f'Y Direction - Original Normal Values (threshold={y_threshold})', fontsize=12)
+            ax3.set_title(f'Y Direction - Original Normal Values (upper={y_threshold_upper}, lower={y_threshold_lower})', fontsize=12)
             ax3.set_ylabel('Percentage of All Pixels')
             ax3.set_ylim(0, 100)
             
@@ -199,7 +199,7 @@ class DebugVisualizer:
             y_percentages_lit = [count / y_total_lit * 100 for count in y_counts_lit] if y_total_lit > 0 else [0, 0, 0]
             
             bars4 = ax4.bar(y_categories, y_percentages_lit, color=['red', 'green', 'blue'])
-            ax4.set_title(f'Y Direction - Lit Masked Values (threshold={y_threshold})', fontsize=12)
+            ax4.set_title(f'Y Direction - Lit Masked Values (upper={y_threshold_upper}, lower={y_threshold_lower})', fontsize=12)
             ax4.set_ylabel('Percentage of Lit Pixels')
             ax4.set_ylim(0, 100)
             
@@ -233,7 +233,7 @@ class DebugVisualizer:
             y_percentages = [count / y_total_all * 100 for count in y_counts]
             
             bars2 = ax2.bar(y_categories, y_percentages, color=['red', 'green', 'blue'])
-            ax2.set_title(f'Y Direction - Original Normal Values (threshold={y_threshold})', fontsize=12)
+            ax2.set_title(f'Y Direction - Original Normal Values (upper={y_threshold_upper}, lower={y_threshold_lower})', fontsize=12)
             ax2.set_ylabel('Percentage of Pixels')
             ax2.set_ylim(0, 100)
             

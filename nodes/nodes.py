@@ -20,7 +20,8 @@ class NormalMapLightEstimator:
                 "luma_threshold": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01}),
                 "curve_type": (["linear", "s_curve", "exponential", "logarithmic"], {"default": "s_curve"}),
                 "x_threshold": ("FLOAT", {"default": 0.4, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "y_threshold": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "y_threshold_upper": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "y_threshold_lower": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 1.0, "step": 0.01}),
                 "central_threshold": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 1.0, "step": 0.01}),
                 "hard_light_threshold": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 1.0, "step": 0.01}),
                 "soft_light_threshold": ("FLOAT", {"default": 0.35, "min": 0.0, "max": 1.0, "step": 0.01}),
@@ -49,7 +50,7 @@ class NormalMapLightEstimator:
     FUNCTION = "estimate_lighting"
     
     def estimate_lighting(self, normal_map, luma_image, luma_threshold, curve_type,
-                        x_threshold, y_threshold, central_threshold,
+                        x_threshold, y_threshold_upper, y_threshold_lower, central_threshold,
                         hard_light_threshold, soft_light_threshold,
                         format_mode="auto", normal_standard="OpenGL", analysis_method="advanced", exclusion_mask=None):
         """
@@ -63,7 +64,7 @@ class NormalMapLightEstimator:
 
         luma_processor = LumaMaskProcessor()
         light_estimator = CategoricalLightEstimator(
-            x_threshold, y_threshold, central_threshold,
+            x_threshold, y_threshold_upper, y_threshold_lower, central_threshold,
             hard_light_threshold, soft_light_threshold,
             format_mode, normal_standard
         )
@@ -117,7 +118,7 @@ class NormalMapLightEstimator:
         print(f"Luma image shape: {luma_image.shape}")
         print(f"Final mask coverage: {mask.sum().item()}/{mask.numel()} pixels ({mask.float().mean().item():.3f})")
         print(f"X threshold: {x_threshold}")
-        print(f"Y threshold: {y_threshold}")
+        print(f"Y thresholds: upper={y_threshold_upper}, lower={y_threshold_lower}")
         
         if analysis_method == "legacy":
             print("Using LEGACY analysis method (simple mean-based)")
@@ -161,14 +162,14 @@ class NormalMapLightEstimator:
         debug_mask = DebugVisualizer.generate_debug_mask(mask)
         lit_normals_viz = DebugVisualizer.generate_lit_normals_visualization(normal_map, mask)
         # Generate threshold-based classification chart
-        cluster_delta_chart = DebugVisualizer.create_threshold_classification_chart(normal_map, x_threshold, y_threshold, mask)
+        cluster_delta_chart = DebugVisualizer.create_threshold_classification_chart(normal_map, x_threshold, y_threshold_upper, y_threshold_lower, mask)
         
         # Generate threshold preview images
         x_threshold_preview = self.create_x_threshold_preview(normal_map, x_threshold)
-        y_threshold_preview = self.create_y_threshold_preview(normal_map, y_threshold)
+        y_threshold_preview = self.create_y_threshold_preview(normal_map, y_threshold_upper, y_threshold_lower)
         
         print(f"Generated X threshold preview with threshold: {x_threshold}")
-        print(f"Generated Y threshold preview with threshold: {y_threshold}")
+        print(f"Generated Y threshold preview with upper: {y_threshold_upper}, lower: {y_threshold_lower}")
 
         return (
             x_direction, y_direction, combined_direction,
@@ -287,10 +288,10 @@ class NormalMapLightEstimator:
         return tensor_img
     
     @staticmethod
-    def create_y_threshold_preview(normal_map, y_threshold):
+    def create_y_threshold_preview(normal_map, y_threshold_upper, y_threshold_lower):
         """
-        Create Y threshold preview image showing down/center/up zones.
-        Red = Down, Green = Center, Blue = Up
+        Create Y threshold preview image showing above/center/below zones.
+        Red = Above, Green = Center, Blue = Below
         """
         import matplotlib.pyplot as plt
         import numpy as np
@@ -303,9 +304,9 @@ class NormalMapLightEstimator:
         else:
             normals_y = normal_map[:, :, :, 1]
         
-        # Create classification mask
-        above_mask = normals_y > y_threshold  # Positive Y = surfaces pointing up = light from above
-        below_mask = normals_y < -y_threshold  # Negative Y = surfaces pointing down = light from below
+        # Create classification mask using separate thresholds
+        above_mask = normals_y > y_threshold_upper  # Positive Y = surfaces pointing up = light from above
+        below_mask = normals_y < -y_threshold_lower  # Negative Y = surfaces pointing down = light from below
         center_mask = ~(above_mask | below_mask)
         
         # Create RGB image
@@ -321,7 +322,7 @@ class NormalMapLightEstimator:
         plt.switch_backend('Agg')
         fig, ax = plt.subplots(figsize=(width/100, height/100))
         ax.imshow(preview[0].numpy())
-        ax.set_title(f'Y Threshold Preview (threshold={y_threshold})', fontsize=12, pad=10)
+        ax.set_title(f'Y Threshold Preview (upper={y_threshold_upper}, lower={y_threshold_lower})', fontsize=12, pad=10)
         
         # Add legend
         legend_elements = [

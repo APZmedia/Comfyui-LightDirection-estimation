@@ -29,6 +29,7 @@ class NormalMapLightEstimator:
                 "format_mode": (["auto", "manual"], {"default": "auto"}),
                 "normal_standard": (["OpenGL", "DirectX", "World_Space", "Object_Space"], {"default": "OpenGL"}),
                 "analysis_method": (["advanced", "legacy"], {"default": "advanced"}),
+                "exclusion_mask": ("MASK",),
             }
         }
     
@@ -50,7 +51,7 @@ class NormalMapLightEstimator:
     def estimate_lighting(self, normal_map, luma_image, luma_threshold, curve_type,
                         x_threshold, y_threshold, central_threshold,
                         hard_light_threshold, soft_light_threshold,
-                        format_mode="auto", normal_standard="OpenGL", analysis_method="advanced"):
+                        format_mode="auto", normal_standard="OpenGL", analysis_method="advanced", exclusion_mask=None):
         """
         Enhanced categorical light direction estimation.
         """
@@ -67,9 +68,43 @@ class NormalMapLightEstimator:
             format_mode, normal_standard
         )
         
-        mask = luma_processor.process_with_curves(
+        # Process luma mask
+        luma_mask = luma_processor.process_with_curves(
             luma_image, curve_type, None, luma_threshold
         )
+        
+        # Apply exclusion mask if provided
+        if exclusion_mask is not None:
+            print(f"Exclusion mask provided: {exclusion_mask.shape}")
+            # Ensure exclusion mask is the same size as other images
+            if exclusion_mask.shape[1] != luma_mask.shape[1] or exclusion_mask.shape[2] != luma_mask.shape[2]:
+                # Handle different mask formats
+                if exclusion_mask.dim() == 3:  # [B, H, W] format
+                    exclusion_mask = exclusion_mask.unsqueeze(1)  # Add channel dimension: [B, 1, H, W]
+                elif exclusion_mask.dim() == 2:  # [H, W] format
+                    exclusion_mask = exclusion_mask.unsqueeze(0).unsqueeze(0)  # [1, 1, H, W]
+                
+                # Now interpolate with proper 4D format
+                exclusion_mask = torch.nn.functional.interpolate(
+                    exclusion_mask, 
+                    size=(luma_mask.shape[1], luma_mask.shape[2]), 
+                    mode='nearest'
+                )
+                
+                # Convert back to original format
+                if exclusion_mask.shape[1] == 1:  # Remove channel dimension if it was added
+                    exclusion_mask = exclusion_mask.squeeze(1)  # [B, H, W]
+                if exclusion_mask.shape[0] == 1:  # Remove batch dimension if it was added
+                    exclusion_mask = exclusion_mask.squeeze(0)  # [H, W]
+            
+            # Combine luma mask with exclusion mask (exclude where exclusion_mask is True)
+            mask = luma_mask & (~exclusion_mask.bool())
+            excluded_pixels = exclusion_mask.sum().item()
+            total_pixels = exclusion_mask.numel()
+            print(f"Excluded {excluded_pixels}/{total_pixels} pixels ({excluded_pixels/total_pixels*100:.1f}%)")
+        else:
+            mask = luma_mask
+            print("No exclusion mask provided")
         
         # Extract lit normals for histogram generation
         current_mask = mask.bool()
@@ -80,7 +115,7 @@ class NormalMapLightEstimator:
         print(f"Analysis method: {analysis_method}")
         print(f"Normal map shape: {normal_map.shape}")
         print(f"Luma image shape: {luma_image.shape}")
-        print(f"Mask coverage: {mask.sum().item()}/{mask.numel()} pixels ({mask.float().mean().item():.3f})")
+        print(f"Final mask coverage: {mask.sum().item()}/{mask.numel()} pixels ({mask.float().mean().item():.3f})")
         print(f"X threshold: {x_threshold}")
         print(f"Y threshold: {y_threshold}")
         
@@ -126,7 +161,7 @@ class NormalMapLightEstimator:
         debug_mask = DebugVisualizer.generate_debug_mask(mask)
         lit_normals_viz = DebugVisualizer.generate_lit_normals_visualization(normal_map, mask)
         # Generate threshold-based classification chart
-        cluster_delta_chart = DebugVisualizer.create_threshold_classification_chart(normal_map, x_threshold, y_threshold)
+        cluster_delta_chart = DebugVisualizer.create_threshold_classification_chart(normal_map, x_threshold, y_threshold, mask)
         
         # Generate threshold preview images
         x_threshold_preview = self.create_x_threshold_preview(normal_map, x_threshold)

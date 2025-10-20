@@ -7,6 +7,27 @@ This document describes the **theory** behind using **normal passes** (from Open
 
 ---
 
+## Exposure Analysis Methodology
+
+### Hybrid Approach
+- **Display-Referred (IRE) Analysis**
+  - Direct sRGB luma values (0-100 IRE scale)
+  - Accurate for display-referred comparisons
+  - Matches what users see on their monitors
+
+- **Scene-Approximated (EV) Analysis**
+  - sRGB → Linear conversion (gamma 2.4 expansion)
+  - Reference: 18% gray @ 0.18 linear value
+  - ΔEV = log₂(linear_after / linear_before)
+  - Margin of error: ±0.3 stops due to gamma encoding
+  - Valid for relative exposure changes only
+
+### Accuracy Considerations
+| Metric | Best For | Limitations |
+|--------|----------|-------------|
+| IRE    | Display-referred analysis | Non-linear relationship to scene light |
+| EV     | Relative exposure changes | Approximate values from sRGB inputs |
+
 ## 1. Inputs
 
 - **Normal Pass** (`N_rgb`):  
@@ -138,4 +159,3 @@ To implement this workflow in Python or node-based systems:
 - OpenGL and DirectX coordinate systems
 - Lambertian reflectance model
 - Image processing techniques for edge detection and frequency analysis
-

@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 class CategoricalLightEstimator:
     def __init__(self, x_threshold=0.4, y_threshold_upper=0.1, y_threshold_lower=0.1, central_threshold=0.3,
                  hard_light_threshold=0.15, soft_light_threshold=0.35,
-                 format_mode="auto", normal_standard="OpenGL"):
+                 format_mode="auto", normal_standard="OpenGL", ev_reference=0.18):
         # Initialize thresholds
         self.x_threshold = x_threshold
         self.y_threshold_upper = y_threshold_upper
@@ -20,6 +20,7 @@ class CategoricalLightEstimator:
         self.format_mode = format_mode
         self.normal_standard = normal_standard
         self.detected_format = None
+        self.ev_reference = ev_reference  # Reference for 18% gray in linear space
 
         # Initialize Sobel filters for gradient analysis
         self.sobel_x = torch.tensor([[[1, 0, -1], [2, 0, -2], [1, 0, -1]]], dtype=torch.float32)
@@ -74,19 +75,39 @@ class CategoricalLightEstimator:
         
         return final_results
 
+    def _srgb_to_linear(self, srgb: torch.Tensor) -> torch.Tensor:
+        """Convert sRGB values to linear light (scene-referred approximation)
+        Warning: True scene-referred values require RAW input data"""
+        return torch.where(
+            srgb <= 0.04045,
+            srgb / 12.92,
+            ((srgb + 0.055) / 1.055) ** 2.4
+        )
+
     def _regression_analysis(self, normals, mask, luma_before, luma_after):
+        # Calculate both display-referred (IRE) and scene-referred (EV) deltas
+        linear_before = self._srgb_to_linear(luma_before)
+        linear_after = self._srgb_to_linear(luma_after)
+        delta_ev = torch.log2(linear_after / (linear_before + 1e-8))
         delta_y = luma_after - luma_before
+        
         X = torch.stack([normals[...,0], normals[...,1], torch.ones_like(normals[...,0])], dim=-1)
-        coeffs = torch.linalg.lstsq(X, delta_y.unsqueeze(-1)).solution.squeeze()
+        coeffs_ev = torch.linalg.lstsq(X, delta_ev.unsqueeze(-1)).solution.squeeze()
+        coeffs_ire = torch.linalg.lstsq(X, delta_y.unsqueeze(-1)).solution.squeeze()
         
         grad_x = F.conv2d(delta_y.unsqueeze(1), self.sobel_x.unsqueeze(1))
         grad_y = F.conv2d(delta_y.unsqueeze(1), self.sobel_y.unsqueeze(1))
         grad_mag = torch.sqrt(grad_x**2 + grad_y**2)
         
         return {
-            'regression_vector': coeffs[:2].tolist(),
+            'ev_coefficients': coeffs_ev[:2].tolist(),
+            'ire_coefficients': coeffs_ire[:2].tolist(),
             'gradient_softness': self._calc_gradient_softness(grad_mag, delta_y),
-            'regression_coefficients': coeffs.tolist()
+            'regression_coefficients': coeffs_ire.tolist(),  # Backwards compatibility
+            'delta_ev': delta_ev,
+            'delta_y': delta_y,
+            'ev_reference': self.ev_reference,
+            'ev_warning': 'EV values approximate - calculated from sRGB inputs'
         }
 
     def _calc_gradient_softness(self, grad_mag, delta_y):
